@@ -9,6 +9,7 @@ class PedidoItemInline(admin.TabularInline):
 
 @admin.register(Pedido)
 class PedidoAdmin(admin.ModelAdmin):
+    editable_fields = ('estado',) # Solo el destino se puede editar después de creado
     list_display = ('id', 'destino', 'estado', 'creado_por', 'fecha_creacion')
     list_filter = ('estado', 'destino', 'fecha_creacion')
     search_fields = ('id', 'destino__nombre')
