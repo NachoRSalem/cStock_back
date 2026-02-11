@@ -2,10 +2,13 @@ from rest_framework import viewsets
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from django.db.models import Sum, F
+
+from apps.users.permissions import IsAdminUser
 from .models import Venta
 from .serializers import VentaSerializer
 from apps.locations.models import Ubicacion
 from apps.inventory.models import PedidoItem
+
 class VentaViewSet(viewsets.ModelViewSet):
     queryset = Venta.objects.all().order_by('-fecha')
     serializer_class = VentaSerializer
@@ -14,6 +17,7 @@ class VentaViewSet(viewsets.ModelViewSet):
         serializer.save(vendedor=self.request.user)
 
 class ReporteEconomicoView(APIView):
+    permission_classes = [IsAdminUser]
     def get(self, request):
         reporte = []
         sucursales = Ubicacion.objects.all()

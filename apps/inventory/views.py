@@ -1,12 +1,20 @@
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
+from .models import PedidoItem
 from .models import Pedido
 from .serializers import PedidoSerializer
 
 class PedidoViewSet(viewsets.ModelViewSet):
-    queryset = Pedido.objects.all()
     serializer_class = PedidoSerializer
+
+    def get_queryset(self):
+        user = self.request.user
+        
+        if user.rol == 'admin':
+            return Pedido.objects.all()
+        
+        return Pedido.objects.filter(destino=user.sucursal_asignada)
 
     def perform_create(self, serializer):
         serializer.save(creado_por=self.request.user)
@@ -18,16 +26,12 @@ class PedidoViewSet(viewsets.ModelViewSet):
         """
         pedido = self.get_object()
         
-        # 1. Actualizamos las sub-ubicaciones enviadas desde el Frontend (React)
-        # El body debe ser: {"items": [{"id": 1, "sub_ubicacion_destino": 5}, ...]}
         items_data = request.data.get('items', [])
         for item_update in items_data:
-            from .models import PedidoItem
             item = PedidoItem.objects.get(id=item_update['id'], pedido=pedido)
             item.sub_ubicacion_destino_id = item_update['sub_ubicacion_destino']
             item.save()
-
-        # 2. Ejecutamos la lógica de negocio que definimos en el modelo
+       
         try:
             pedido.marcar_como_recibido()
             return Response({'status': 'Pedido recibido y stock actualizado'}, status=status.HTTP_200_OK)
