@@ -11,12 +11,7 @@ class VentaViewSet(viewsets.ModelViewSet):
     serializer_class = VentaSerializer
 
     def perform_create(self, serializer):
-        # Al igual que en pedidos, nos aseguramos de asignar al usuario logueado
-        # Si no tenés login, usá el usuario hardcodeado como hicimos antes
-        from django.contrib.auth import get_user_model
-        User = get_user_model()
-        admin_user = User.objects.first()
-        serializer.save(vendedor=admin_user)
+        serializer.save(vendedor=self.request.user)
 
 class ReporteEconomicoView(APIView):
     def get(self, request):

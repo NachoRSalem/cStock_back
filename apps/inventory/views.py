@@ -11,12 +11,6 @@ class PedidoViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         serializer.save(creado_por=self.request.user)
 
-    """def perform_create(self, serializer):
-        from django.contrib.auth import get_user_model
-        User = get_user_model()
-        admin_user = User.objects.first()
-        serializer.save(creado_por=admin_user)"""
-
     @action(detail=True, methods=['post'])
     def recibir(self, request, pk=None):
         """
