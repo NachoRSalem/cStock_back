@@ -12,8 +12,8 @@ class MyTokenObtainPairSerializer(TokenObtainPairSerializer):
     def validate(self, attrs):
         data = super().validate(attrs)
         data['rol'] = self.user.rol
-        # Mantener compatibilidad: sucursal como string (nombre)
-        data['sucursal'] = self.user.sucursal_asignada.nombre if self.user.sucursal_asignada else None
+        # Sucursal como ID (número) para compatibilidad con formularios
+        data['sucursal'] = self.user.sucursal_asignada.id if self.user.sucursal_asignada else None
         # Objeto completo disponible si lo necesitas
         data['sucursal_detalle'] = {
             'id': self.user.sucursal_asignada.id,

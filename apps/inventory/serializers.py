@@ -2,6 +2,21 @@ from rest_framework import serializers
 from .models import Pedido, PedidoItem, Stock
 from apps.locations.serializers import UbicacionSerializer
 
+class StockSerializer(serializers.ModelSerializer):
+    producto_nombre = serializers.ReadOnlyField(source='producto.nombre')
+    producto_tipo_conservacion = serializers.ReadOnlyField(source='producto.tipo_conservacion')
+    sub_ubicacion_nombre = serializers.ReadOnlyField(source='sub_ubicacion.nombre')
+    sub_ubicacion_tipo = serializers.ReadOnlyField(source='sub_ubicacion.tipo')
+    ubicacion_nombre = serializers.ReadOnlyField(source='sub_ubicacion.ubicacion.nombre')
+    ubicacion_id = serializers.ReadOnlyField(source='sub_ubicacion.ubicacion.id')
+    
+    class Meta:
+        model = Stock
+        fields = ['id', 'producto', 'producto_nombre', 'producto_tipo_conservacion',
+                  'sub_ubicacion', 'sub_ubicacion_nombre', 'sub_ubicacion_tipo',
+                  'ubicacion_id', 'ubicacion_nombre', 'cantidad', 'ultima_actualizacion']
+        read_only_fields = ['ultima_actualizacion']
+
 class PedidoItemSerializer(serializers.ModelSerializer):
     
     producto_nombre = serializers.ReadOnlyField(source='producto.nombre')
