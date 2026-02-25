@@ -8,8 +8,15 @@ class User(AbstractUser):
     )
     
     rol = models.CharField(max_length=20, choices=ROLES, default='sucursal')
-    # Luego vincularemos esto a la tabla de Sucursales
-    sucursal_asignada = models.CharField(max_length=100, blank=True, null=True) 
+    sucursal_asignada = models.ForeignKey(
+        'locations.Ubicacion',
+        on_delete=models.SET_NULL,
+        blank=True,
+        null=True,
+        related_name='usuarios',
+        limit_choices_to={'tipo': 'sucursal'},
+        verbose_name='Sucursal Asignada'
+    )
 
     def __str__(self):
         return f"{self.username} - {self.get_rol_display()}"
