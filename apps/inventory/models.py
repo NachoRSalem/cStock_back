@@ -31,6 +31,7 @@ class Pedido(models.Model):
     fecha_creacion = models.DateTimeField(auto_now_add=True)
     fecha_actualizacion = models.DateTimeField(auto_now=True)
     pdf_archivo = models.FileField(upload_to='pedidos_pdf/', null=True, blank=True)
+    provisto_desde_almacen = models.BooleanField(default=False, help_text="Indica si el pedido fue provisto desde el almacén del admin")
 
     def marcar_como_recibido(self):
         """
@@ -72,7 +73,18 @@ class PedidoItem(models.Model):
         on_delete=models.SET_NULL, 
         null=True, 
         blank=True,
+        related_name='pedido_items_destino',
         help_text="Donde se guardó el producto al recibirlo"
+    )
+    
+    # se llena al momento de aprobar si proviene del almacén
+    sub_ubicacion_origen = models.ForeignKey(
+        SubUbicacion,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='pedido_items_origen',
+        help_text="De donde se tomó el producto en el almacén del admin"
     )
 
     def __str__(self):

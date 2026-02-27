@@ -2,6 +2,7 @@ import io
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
+from django.db import transaction
 
 from apps.users.permissions import IsAdminUser
 from .models import PedidoItem, Stock
@@ -44,15 +45,73 @@ class PedidoViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=['post'], permission_classes=[IsAdminUser])
     def aprobar(self, request, pk=None):
-        """El Admin aprueba el pedido pendiente."""
+        """
+        El Admin aprueba el pedido pendiente.
+        Si provisto_desde_almacen=True, descuenta stock del almacén.
+        Body esperado:
+        {
+            "provisto_desde_almacen": true/false,
+            "items": [
+                {
+                    "id": <pedido_item_id>,
+                    "sub_ubicacion_origen": <sub_ubicacion_id del almacén>
+                },
+                ...
+            ]
+        }
+        """
         pedido = self.get_object()
         if pedido.estado != 'pendiente':
             return Response({'error': 'Solo pedidos pendientes pueden ser aprobados.'}, 
                             status=status.HTTP_400_BAD_REQUEST)
         
-        pedido.estado = 'aprobado'
-        pedido.save()
-        return Response({'status': 'Pedido aprobado exitosamente.'})
+        provisto_desde_almacen = request.data.get('provisto_desde_almacen', False)
+        items_data = request.data.get('items', [])
+        
+        try:
+            with transaction.atomic():
+                if provisto_desde_almacen:
+                    # Descontar stock del almacén
+                    for item_data in items_data:
+                        try:
+                            item = PedidoItem.objects.get(id=item_data['id'], pedido=pedido)
+                            sub_ubicacion_origen_id = item_data.get('sub_ubicacion_origen')
+                            
+                            if not sub_ubicacion_origen_id:
+                                raise Exception(f"El producto {item.producto.nombre} no tiene sub_ubicación de origen especificada.")
+                            
+                            # Buscar el stock en el almacén
+                            try:
+                                stock_origen = Stock.objects.get(
+                                    producto=item.producto,
+                                    sub_ubicacion_id=sub_ubicacion_origen_id
+                                )
+                                
+                                if stock_origen.cantidad < item.cantidad:
+                                    raise Exception(f"Stock insuficiente en almacén para {item.producto.nombre}. Disponible: {stock_origen.cantidad}, Requerido: {item.cantidad}")
+                                
+                                # Descontar del almacén
+                                stock_origen.cantidad -= item.cantidad
+                                stock_origen.save()
+                                
+                                # Guardar la sub_ubicacion_origen en el item
+                                item.sub_ubicacion_origen_id = sub_ubicacion_origen_id
+                                item.save()
+                                
+                            except Stock.DoesNotExist:
+                                raise Exception(f"No hay stock de {item.producto.nombre} en la sub-ubicación especificada del almacén.")
+                        
+                        except PedidoItem.DoesNotExist:
+                            raise Exception(f"El item con id {item_data['id']} no pertenece al pedido {pedido.id}")
+                
+                pedido.estado = 'aprobado'
+                pedido.provisto_desde_almacen = provisto_desde_almacen
+                pedido.save()
+                
+            return Response({'status': 'Pedido aprobado exitosamente.'})
+        
+        except Exception as e:
+            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
     
     @action(detail=True, methods=['post'])
     def subir_pdf(self, request, pk=None):
