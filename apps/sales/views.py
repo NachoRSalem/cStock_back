@@ -10,8 +10,15 @@ from apps.locations.models import Ubicacion
 from apps.inventory.models import PedidoItem
 
 class VentaViewSet(viewsets.ModelViewSet):
-    queryset = Venta.objects.all().order_by('-fecha')
+    queryset = Venta.objects.all()
     serializer_class = VentaSerializer
+
+    def get_queryset(self):
+        qs = Venta.objects.select_related('sucursal', 'vendedor').prefetch_related('items__producto').order_by('-fecha')
+        sucursal_id = self.request.query_params.get('sucursal')
+        if sucursal_id:
+            qs = qs.filter(sucursal_id=sucursal_id)
+        return qs
 
     def perform_create(self, serializer):
         serializer.save(vendedor=self.request.user)

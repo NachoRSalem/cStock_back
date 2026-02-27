@@ -10,11 +10,13 @@ class VentaItemSerializer(serializers.ModelSerializer):
 
 class VentaSerializer(serializers.ModelSerializer):
     items = VentaItemSerializer(many=True)
+    sucursal_nombre = serializers.ReadOnlyField(source='sucursal.nombre')
+    vendedor_nombre = serializers.ReadOnlyField(source='vendedor.username')
 
     class Meta:
         model = Venta
-        fields = ['id', 'vendedor', 'sucursal', 'fecha', 'total', 'items']
-        read_only_fields = ['vendedor', 'total', 'fecha']
+        fields = ['id', 'vendedor', 'vendedor_nombre', 'sucursal', 'sucursal_nombre', 'fecha', 'total', 'items']
+        read_only_fields = ['vendedor', 'vendedor_nombre', 'sucursal_nombre', 'total', 'fecha']
 
     def create(self, validated_data):
         # La creación real la delegamos al método procesar_venta del modelo
