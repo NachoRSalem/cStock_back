@@ -53,6 +53,32 @@ class PedidoViewSet(viewsets.ModelViewSet):
         pedido.estado = 'aprobado'
         pedido.save()
         return Response({'status': 'Pedido aprobado exitosamente.'})
+    
+    @action(detail=True, methods=['post'])
+    def subir_pdf(self, request, pk=None):
+        """Sube el PDF de la orden de compra al pedido."""
+        pedido = self.get_object()
+        
+        if 'pdf' not in request.FILES:
+            return Response({'error': 'No se proporcionó ningún archivo PDF.'}, 
+                            status=status.HTTP_400_BAD_REQUEST)
+        
+        pdf_file = request.FILES['pdf']
+        
+        # Validar que sea PDF
+        if not pdf_file.name.endswith('.pdf'):
+            return Response({'error': 'El archivo debe ser un PDF.'}, 
+                            status=status.HTTP_400_BAD_REQUEST)
+        
+        # Guardar el archivo
+        pedido.pdf_archivo = pdf_file
+        pedido.save()
+        
+        serializer = self.get_serializer(pedido, context={'request': request})
+        return Response({
+            'status': 'PDF subido exitosamente.',
+            'pdf_url': serializer.data.get('pdf_url')
+        })
 
     @action(detail=True, methods=['post'], permission_classes=[IsAdminUser])
     def rechazar(self, request, pk=None):

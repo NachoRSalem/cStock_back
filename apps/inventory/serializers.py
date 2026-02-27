@@ -28,11 +28,19 @@ class PedidoItemSerializer(serializers.ModelSerializer):
 class PedidoSerializer(serializers.ModelSerializer):
     items = PedidoItemSerializer(many=True) 
     destino_nombre = serializers.ReadOnlyField(source='destino.nombre')
+    pdf_url = serializers.SerializerMethodField()
 
     class Meta:
         model = Pedido
-        fields = ['id', 'creado_por', 'destino', 'destino_nombre', 'estado', 'fecha_creacion', 'items']
-        read_only_fields = ['creado_por', 'estado']
+        fields = ['id', 'creado_por', 'destino', 'destino_nombre', 'estado', 'fecha_creacion', 'items', 'pdf_archivo', 'pdf_url']
+        read_only_fields = ['creado_por', 'estado', 'pdf_archivo', 'pdf_url']
+    
+    def get_pdf_url(self, obj):
+        if obj.pdf_archivo:
+            request = self.context.get('request')
+            if request:
+                return request.build_absolute_uri(obj.pdf_archivo.url)
+        return None
 
     def create(self, validated_data):
        
@@ -41,3 +49,23 @@ class PedidoSerializer(serializers.ModelSerializer):
         for item_data in items_data:
             PedidoItem.objects.create(pedido=pedido, **item_data)
         return pedido
+    
+    def update(self, instance, validated_data):
+        # Extraer los items anidados si existen
+        items_data = validated_data.pop('items', None)
+        
+        # Actualizar los campos del pedido
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+        instance.save()
+        
+        # Si se enviaron items, reemplazar los existentes
+        if items_data is not None:
+            # Eliminar los items existentes
+            instance.items.all().delete()
+            
+            # Crear los nuevos items
+            for item_data in items_data:
+                PedidoItem.objects.create(pedido=instance, **item_data)
+        
+        return instance
