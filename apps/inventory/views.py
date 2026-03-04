@@ -80,31 +80,53 @@ class PedidoViewSet(viewsets.ModelViewSet):
                     for item_data in items_data:
                         try:
                             item = PedidoItem.objects.get(id=item_data['id'], pedido=pedido)
-                            sub_ubicacion_origen_id = item_data.get('sub_ubicacion_origen')
                             
-                            if not sub_ubicacion_origen_id:
-                                raise Exception(f"El producto {item.producto.nombre} no tiene sub_ubicación de origen especificada.")
+                            # Soportar múltiples sub-ubicaciones origen
+                            sub_ubicaciones_origen = item_data.get('sub_ubicaciones_origen', [])
                             
-                            # Buscar el stock en la sucursal origen
-                            try:
-                                stock_origen = Stock.objects.get(
-                                    producto=item.producto,
-                                    sub_ubicacion_id=sub_ubicacion_origen_id
-                                )
+                            if not sub_ubicaciones_origen:
+                                raise Exception(f"El producto {item.producto.nombre} no tiene sub-ubicaciones de origen especificadas.")
+                            
+                            # Validar que la suma de cantidades coincide con la cantidad pedida
+                            total_cantidad = sum(ub['cantidad'] for ub in sub_ubicaciones_origen)
+                            if total_cantidad != item.cantidad:
+                                raise Exception(f"La cantidad total asignada para {item.producto.nombre} ({total_cantidad}) no coincide con la cantidad pedida ({item.cantidad})")
+                            
+                            # Procesar cada sub-ubicación
+                            detalles_origen = []
+                            for ub_data in sub_ubicaciones_origen:
+                                sub_ubicacion_id = ub_data['sub_ubicacion']
+                                cantidad_a_tomar = ub_data['cantidad']
                                 
-                                if stock_origen.cantidad < item.cantidad:
-                                    raise Exception(f"Stock insuficiente en la sucursal origen para {item.producto.nombre}. Disponible: {stock_origen.cantidad}, Requerido: {item.cantidad}")
-                                
-                                # Descontar del origen
-                                stock_origen.cantidad -= item.cantidad
-                                stock_origen.save()
-                                
-                                # Guardar la sub_ubicacion_origen en el item
-                                item.sub_ubicacion_origen_id = sub_ubicacion_origen_id
-                                item.save()
-                                
-                            except Stock.DoesNotExist:
-                                raise Exception(f"No hay stock de {item.producto.nombre} en la sub-ubicación especificada de la sucursal origen.")
+                                try:
+                                    stock_origen = Stock.objects.get(
+                                        producto=item.producto,
+                                        sub_ubicacion_id=sub_ubicacion_id
+                                    )
+                                    
+                                    if stock_origen.cantidad < cantidad_a_tomar:
+                                        raise Exception(f"Stock insuficiente en la sub-ubicación para {item.producto.nombre}. Disponible: {stock_origen.cantidad}, Requerido: {cantidad_a_tomar}")
+                                    
+                                    # Descontar del origen
+                                    stock_origen.cantidad -= cantidad_a_tomar
+                                    stock_origen.save()
+                                    
+                                    # Guardar detalle
+                                    detalles_origen.append({
+                                        'sub_ubicacion_id': sub_ubicacion_id,
+                                        'sub_ubicacion_nombre': stock_origen.sub_ubicacion.nombre,
+                                        'cantidad': cantidad_a_tomar
+                                    })
+                                    
+                                except Stock.DoesNotExist:
+                                    raise Exception(f"No hay stock de {item.producto.nombre} en la sub-ubicación especificada de la sucursal origen.")
+                            
+                            # Guardar los detalles en el item
+                            item.sub_ubicaciones_origen_detalle = detalles_origen
+                            # También guardar en el campo legacy por compatibilidad (la primera sub-ubicación)
+                            if detalles_origen:
+                                item.sub_ubicacion_origen_id = detalles_origen[0]['sub_ubicacion_id']
+                            item.save()
                         
                         except PedidoItem.DoesNotExist:
                             raise Exception(f"El item con id {item_data['id']} no pertenece al pedido {pedido.id}")

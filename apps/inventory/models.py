@@ -2,6 +2,7 @@ from django.db import models, transaction
 from apps.products.models import Producto
 from apps.locations.models import SubUbicacion, Ubicacion
 from core import settings
+import json
 
 class Stock(models.Model):
     producto = models.ForeignKey(Producto, on_delete=models.CASCADE, related_name='stocks')
@@ -92,7 +93,14 @@ class PedidoItem(models.Model):
         null=True,
         blank=True,
         related_name='pedido_items_origen',
-        help_text="De donde se tomó el producto en el almacén del admin"
+        help_text="De donde se tomó el producto en el almacén del admin (campo legacy)"
+    )
+    
+    # Múltiples sub-ubicaciones origen (cuando se distribuye entre varias)
+    sub_ubicaciones_origen_detalle = models.JSONField(
+        null=True,
+        blank=True,
+        help_text="Array de {sub_ubicacion_id, cantidad} cuando el stock se toma de múltiples sub-ubicaciones"
     )
 
     def __str__(self):
