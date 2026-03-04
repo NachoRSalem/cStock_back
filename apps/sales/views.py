@@ -1,6 +1,7 @@
 from rest_framework import viewsets
 from rest_framework.views import APIView
 from rest_framework.response import Response
+from rest_framework.pagination import PageNumberPagination
 from django.db.models import Sum, F
 
 from apps.users.permissions import IsAdminUser
@@ -9,9 +10,15 @@ from .serializers import VentaSerializer
 from apps.locations.models import Ubicacion
 from apps.inventory.models import PedidoItem
 
+class VentaPagination(PageNumberPagination):
+    page_size = 10
+    page_size_query_param = 'page_size'
+    max_page_size = 100
+
 class VentaViewSet(viewsets.ModelViewSet):
     queryset = Venta.objects.all()
     serializer_class = VentaSerializer
+    pagination_class = VentaPagination
 
     def get_queryset(self):
         qs = Venta.objects.select_related('sucursal', 'vendedor').prefetch_related('items__producto').order_by('-fecha')
