@@ -47,14 +47,14 @@ class PedidoViewSet(viewsets.ModelViewSet):
     def aprobar(self, request, pk=None):
         """
         El Admin aprueba el pedido pendiente.
-        Si provisto_desde_almacen=True, descuenta stock del almacén.
         Body esperado:
         {
-            "provisto_desde_almacen": true/false,
+            "origen_tipo": "distribuidor" | "sucursal",
+            "origen_sucursal": <id> (requerido si origen_tipo='sucursal'),
             "items": [
                 {
                     "id": <pedido_item_id>,
-                    "sub_ubicacion_origen": <sub_ubicacion_id del almacén>
+                    "sub_ubicacion_origen": <sub_ubicacion_id del origen>
                 },
                 ...
             ]
@@ -65,13 +65,18 @@ class PedidoViewSet(viewsets.ModelViewSet):
             return Response({'error': 'Solo pedidos pendientes pueden ser aprobados.'}, 
                             status=status.HTTP_400_BAD_REQUEST)
         
-        provisto_desde_almacen = request.data.get('provisto_desde_almacen', False)
+        origen_tipo = request.data.get('origen_tipo', 'distribuidor')
+        origen_sucursal_id = request.data.get('origen_sucursal')
         items_data = request.data.get('items', [])
         
         try:
             with transaction.atomic():
-                if provisto_desde_almacen:
-                    # Descontar stock del almacén
+                if origen_tipo == 'sucursal':
+                    # Validar que se especificó la sucursal origen
+                    if not origen_sucursal_id:
+                        raise Exception("Debe especificar la sucursal de origen cuando origen_tipo='sucursal'")
+                    
+                    # Descontar stock de la sucursal origen
                     for item_data in items_data:
                         try:
                             item = PedidoItem.objects.get(id=item_data['id'], pedido=pedido)
@@ -80,7 +85,7 @@ class PedidoViewSet(viewsets.ModelViewSet):
                             if not sub_ubicacion_origen_id:
                                 raise Exception(f"El producto {item.producto.nombre} no tiene sub_ubicación de origen especificada.")
                             
-                            # Buscar el stock en el almacén
+                            # Buscar el stock en la sucursal origen
                             try:
                                 stock_origen = Stock.objects.get(
                                     producto=item.producto,
@@ -88,9 +93,9 @@ class PedidoViewSet(viewsets.ModelViewSet):
                                 )
                                 
                                 if stock_origen.cantidad < item.cantidad:
-                                    raise Exception(f"Stock insuficiente en almacén para {item.producto.nombre}. Disponible: {stock_origen.cantidad}, Requerido: {item.cantidad}")
+                                    raise Exception(f"Stock insuficiente en la sucursal origen para {item.producto.nombre}. Disponible: {stock_origen.cantidad}, Requerido: {item.cantidad}")
                                 
-                                # Descontar del almacén
+                                # Descontar del origen
                                 stock_origen.cantidad -= item.cantidad
                                 stock_origen.save()
                                 
@@ -99,13 +104,14 @@ class PedidoViewSet(viewsets.ModelViewSet):
                                 item.save()
                                 
                             except Stock.DoesNotExist:
-                                raise Exception(f"No hay stock de {item.producto.nombre} en la sub-ubicación especificada del almacén.")
+                                raise Exception(f"No hay stock de {item.producto.nombre} en la sub-ubicación especificada de la sucursal origen.")
                         
                         except PedidoItem.DoesNotExist:
                             raise Exception(f"El item con id {item_data['id']} no pertenece al pedido {pedido.id}")
                 
                 pedido.estado = 'aprobado'
-                pedido.provisto_desde_almacen = provisto_desde_almacen
+                pedido.origen_tipo = origen_tipo
+                pedido.origen_sucursal_id = origen_sucursal_id if origen_tipo == 'sucursal' else None
                 pedido.save()
                 
             return Response({'status': 'Pedido aprobado exitosamente.'})
@@ -188,6 +194,71 @@ class PedidoViewSet(viewsets.ModelViewSet):
         
         buffer.seek(0)
         return FileResponse(buffer, as_attachment=True, filename=f'remito_{pedido.id}.pdf')
+    
+    @action(detail=True, methods=['get'], permission_classes=[IsAdminUser])
+    def disponibilidad_sucursales(self, request, pk=None):
+        """
+        Devuelve qué sucursales tienen stock disponible para cumplir este pedido.
+        Retorna: [
+            {
+                "sucursal_id": int,
+                "sucursal_nombre": str,
+                "puede_completar": bool,
+                "productos": [
+                    {
+                        "producto_id": int,
+                        "producto_nombre": str,
+                        "cantidad_requerida": int,
+                        "cantidad_disponible": int,
+                        "suficiente": bool
+                    }
+                ]
+            }
+        ]
+        """
+        from apps.locations.models import Ubicacion
+        from django.db.models import Sum
+        
+        pedido = self.get_object()
+        items = pedido.items.all()
+        
+        # Obtener todas las sucursales excepto el destino
+        sucursales = Ubicacion.objects.exclude(id=pedido.destino.id)
+        
+        resultado = []
+        
+        for suc in sucursales:
+            # Para cada sucursal, verificar si tiene stock de todos los productos requeridos
+            productos_info = []
+            puede_completar = True
+            
+            for item in items:
+                # Sumar el stock disponible en todas las sub-ubicaciones de esta sucursal para este producto
+                stock_total = Stock.objects.filter(
+                    producto=item.producto,
+                    sub_ubicacion__ubicacion=suc
+                ).aggregate(total=Sum('cantidad'))['total'] or 0
+                
+                suficiente = stock_total >= item.cantidad
+                if not suficiente:
+                    puede_completar = False
+                
+                productos_info.append({
+                    'producto_id': item.producto.id,
+                    'producto_nombre': item.producto.nombre,
+                    'cantidad_requerida': item.cantidad,
+                    'cantidad_disponible': stock_total,
+                    'suficiente': suficiente
+                })
+            
+            resultado.append({
+                'sucursal_id': suc.id,
+                'sucursal_nombre': suc.nombre,
+                'puede_completar': puede_completar,
+                'productos': productos_info
+            })
+        
+        return Response(resultado)
 
 class StockViewSet(viewsets.ReadOnlyModelViewSet):
     """

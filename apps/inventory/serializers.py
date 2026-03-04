@@ -28,12 +28,13 @@ class PedidoItemSerializer(serializers.ModelSerializer):
 class PedidoSerializer(serializers.ModelSerializer):
     items = PedidoItemSerializer(many=True) 
     destino_nombre = serializers.ReadOnlyField(source='destino.nombre')
+    origen_sucursal_nombre = serializers.ReadOnlyField(source='origen_sucursal.nombre')
     pdf_url = serializers.SerializerMethodField()
 
     class Meta:
         model = Pedido
-        fields = ['id', 'creado_por', 'destino', 'destino_nombre', 'estado', 'fecha_creacion', 'items', 'pdf_archivo', 'pdf_url', 'provisto_desde_almacen']
-        read_only_fields = ['creado_por', 'estado', 'pdf_archivo', 'pdf_url', 'provisto_desde_almacen']
+        fields = ['id', 'creado_por', 'destino', 'destino_nombre', 'estado', 'fecha_creacion', 'items', 'pdf_archivo', 'pdf_url', 'origen_tipo', 'origen_sucursal', 'origen_sucursal_nombre']
+        read_only_fields = ['creado_por', 'estado', 'pdf_archivo', 'pdf_url', 'origen_sucursal_nombre']
     
     def get_pdf_url(self, obj):
         if obj.pdf_archivo:

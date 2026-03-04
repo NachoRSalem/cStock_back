@@ -25,13 +25,21 @@ class Pedido(models.Model):
         ('recibido', 'Recibido'),
     )
     
+    TIPO_ORIGEN = (
+        ('distribuidor', 'Distribuidor'),
+        ('sucursal', 'Sucursal'),
+    )
+    
     creado_por = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
-    destino = models.ForeignKey(Ubicacion, on_delete=models.CASCADE, related_name='pedidos')
+    destino = models.ForeignKey(Ubicacion, on_delete=models.CASCADE, related_name='pedidos_destino')
     estado = models.CharField(max_length=20, choices=ESTADOS, default='borrador')
     fecha_creacion = models.DateTimeField(auto_now_add=True)
     fecha_actualizacion = models.DateTimeField(auto_now=True)
     pdf_archivo = models.FileField(upload_to='pedidos_pdf/', null=True, blank=True)
-    provisto_desde_almacen = models.BooleanField(default=False, help_text="Indica si el pedido fue provisto desde el almacén del admin")
+    
+    # Origen del pedido
+    origen_tipo = models.CharField(max_length=20, choices=TIPO_ORIGEN, default='distribuidor', help_text="Origen del stock para este pedido")
+    origen_sucursal = models.ForeignKey(Ubicacion, on_delete=models.SET_NULL, null=True, blank=True, related_name='pedidos_origen', help_text="Sucursal/almacén de origen si origen_tipo='sucursal'")
 
     def marcar_como_recibido(self):
         """
