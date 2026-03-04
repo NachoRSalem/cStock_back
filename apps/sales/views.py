@@ -44,10 +44,11 @@ class ReporteEconomicoView(APIView):
         }
 
         for suc in sucursales_qs:
-            # 1. Sumar gastos de pedidos RECIBIDOS en esa sucursal
+            # 1. Sumar gastos de pedidos RECIBIDOS en esa sucursal (solo desde distribuidor)
             gastos_qs = PedidoItem.objects.filter(
                 pedido__destino=suc, 
-                pedido__estado='recibido'
+                pedido__estado='recibido',
+                pedido__origen_tipo='distribuidor'
             )
             if fecha_desde:
                 gastos_qs = gastos_qs.filter(pedido__fecha_creacion__gte=fecha_desde)
