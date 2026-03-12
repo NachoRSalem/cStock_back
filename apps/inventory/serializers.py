@@ -5,17 +5,21 @@ from apps.locations.serializers import UbicacionSerializer
 class StockSerializer(serializers.ModelSerializer):
     producto_nombre = serializers.ReadOnlyField(source='producto.nombre')
     producto_tipo_conservacion = serializers.ReadOnlyField(source='producto.tipo_conservacion')
+    producto_dias_caducidad = serializers.ReadOnlyField(source='producto.dias_caducidad')
     sub_ubicacion_nombre = serializers.ReadOnlyField(source='sub_ubicacion.nombre')
     sub_ubicacion_tipo = serializers.ReadOnlyField(source='sub_ubicacion.tipo')
     ubicacion_nombre = serializers.ReadOnlyField(source='sub_ubicacion.ubicacion.nombre')
     ubicacion_id = serializers.ReadOnlyField(source='sub_ubicacion.ubicacion.id')
+    fecha_vencimiento = serializers.ReadOnlyField()
+    dias_para_vencer = serializers.ReadOnlyField()
     
     class Meta:
         model = Stock
-        fields = ['id', 'producto', 'producto_nombre', 'producto_tipo_conservacion',
+        fields = ['id', 'producto', 'producto_nombre', 'producto_tipo_conservacion', 'producto_dias_caducidad',
                   'sub_ubicacion', 'sub_ubicacion_nombre', 'sub_ubicacion_tipo',
-                  'ubicacion_id', 'ubicacion_nombre', 'cantidad', 'ultima_actualizacion']
-        read_only_fields = ['ultima_actualizacion']
+                  'ubicacion_id', 'ubicacion_nombre', 'cantidad', 'ultima_actualizacion',
+                  'fecha_ingreso', 'lote', 'fecha_vencimiento', 'dias_para_vencer']
+        read_only_fields = ['ultima_actualizacion', 'fecha_vencimiento', 'dias_para_vencer']
 
 class PedidoItemSerializer(serializers.ModelSerializer):
     

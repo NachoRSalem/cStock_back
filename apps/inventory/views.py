@@ -98,28 +98,40 @@ class PedidoViewSet(viewsets.ModelViewSet):
                                 sub_ubicacion_id = ub_data['sub_ubicacion']
                                 cantidad_a_tomar = ub_data['cantidad']
                                 
-                                try:
-                                    stock_origen = Stock.objects.get(
-                                        producto=item.producto,
-                                        sub_ubicacion_id=sub_ubicacion_id
-                                    )
+                                # Obtener todos los lotes del producto en esta sub-ubicación
+                                # Ordenar por fecha_ingreso (FIFO) - los sin fecha van al final
+                                stocks_disponibles = Stock.objects.filter(
+                                    producto=item.producto,
+                                    sub_ubicacion_id=sub_ubicacion_id,
+                                    cantidad__gt=0
+                                ).order_by('fecha_ingreso', 'id')
+                                
+                                if not stocks_disponibles.exists():
+                                    raise Exception(f"No hay stock de {item.producto.nombre} en la sub-ubicación especificada de la sucursal origen.")
+                                
+                                # Verificar que hay stock suficiente en total
+                                total_disponible = sum(s.cantidad for s in stocks_disponibles)
+                                if total_disponible < cantidad_a_tomar:
+                                    raise Exception(f"Stock insuficiente en la sub-ubicación para {item.producto.nombre}. Disponible: {total_disponible}, Requerido: {cantidad_a_tomar}")
+                                
+                                # Descontar de los lotes usando FIFO
+                                cantidad_restante = cantidad_a_tomar
+                                for stock_origen in stocks_disponibles:
+                                    if cantidad_restante <= 0:
+                                        break
                                     
-                                    if stock_origen.cantidad < cantidad_a_tomar:
-                                        raise Exception(f"Stock insuficiente en la sub-ubicación para {item.producto.nombre}. Disponible: {stock_origen.cantidad}, Requerido: {cantidad_a_tomar}")
-                                    
-                                    # Descontar del origen
-                                    stock_origen.cantidad -= cantidad_a_tomar
+                                    cantidad_a_descontar = min(stock_origen.cantidad, cantidad_restante)
+                                    stock_origen.cantidad -= cantidad_a_descontar
                                     stock_origen.save()
                                     
-                                    # Guardar detalle
-                                    detalles_origen.append({
-                                        'sub_ubicacion_id': sub_ubicacion_id,
-                                        'sub_ubicacion_nombre': stock_origen.sub_ubicacion.nombre,
-                                        'cantidad': cantidad_a_tomar
-                                    })
-                                    
-                                except Stock.DoesNotExist:
-                                    raise Exception(f"No hay stock de {item.producto.nombre} en la sub-ubicación especificada de la sucursal origen.")
+                                    cantidad_restante -= cantidad_a_descontar
+                                
+                                # Guardar detalle (usamos el primer stock para obtener el nombre)
+                                detalles_origen.append({
+                                    'sub_ubicacion_id': sub_ubicacion_id,
+                                    'sub_ubicacion_nombre': stocks_disponibles.first().sub_ubicacion.nombre,
+                                    'cantidad': cantidad_a_tomar
+                                })
                             
                             # Guardar los detalles en el item
                             item.sub_ubicaciones_origen_detalle = detalles_origen
@@ -282,13 +294,23 @@ class PedidoViewSet(viewsets.ModelViewSet):
         
         return Response(resultado)
 
-class StockViewSet(viewsets.ReadOnlyModelViewSet):
+class StockViewSet(viewsets.ModelViewSet):
     """
     Consulta de stock por ubicación.
     Usuarios de sucursal solo ven su stock.
     Admins ven todo el stock.
+    Admins pueden crear y actualizar registros de stock.
     """
     serializer_class = StockSerializer
+    
+    def get_permissions(self):
+        """
+        Solo los admins pueden crear, actualizar o eliminar stock.
+        Todos pueden listar (sujeto a filtros por rol en get_queryset).
+        """
+        if self.action in ['create', 'update', 'partial_update', 'destroy']:
+            return [IsAdminUser()]
+        return super().get_permissions()
     
     def get_queryset(self):
         user = self.request.user

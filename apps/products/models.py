@@ -19,6 +19,11 @@ class Producto(models.Model):
     precio_venta = models.DecimalField(max_digits=10, decimal_places=2)
     costo_compra = models.DecimalField(max_digits=10, decimal_places=2) # Para el reporte de ganancias
     sku = models.CharField(max_length=50, unique=True, blank=True, null=True) # Código de barras si usás
+    dias_caducidad = models.PositiveIntegerField(
+        null=True, 
+        blank=True,
+        help_text="Días de caducidad desde la compra al distribuidor. Ej: 90 días = 3 meses"
+    )
 
     def __str__(self):
         return self.nombre

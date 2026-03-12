@@ -2,6 +2,7 @@ from django.db import models, transaction
 from apps.products.models import Producto
 from apps.locations.models import SubUbicacion, Ubicacion
 from core import settings
+from datetime import timedelta
 import json
 
 class Stock(models.Model):
@@ -9,13 +10,43 @@ class Stock(models.Model):
     sub_ubicacion = models.ForeignKey(SubUbicacion, on_delete=models.CASCADE, related_name='stocks')
     cantidad = models.PositiveIntegerField(default=0)
     ultima_actualizacion = models.DateTimeField(auto_now=True)
+    fecha_ingreso = models.DateField(
+        null=True, 
+        blank=True,
+        help_text="Fecha de ingreso del lote al stock"
+    )
+    lote = models.CharField(
+        max_length=100,
+        null=True,
+        blank=True,
+        help_text="Identificador del lote (puede ser generado automáticamente)"
+    )
 
     class Meta:
-        unique_together = ('producto', 'sub_ubicacion')
+        # Ahora permitimos múltiples registros del mismo producto en la misma sub_ubicación
+        # diferenciados por lote
+        unique_together = ('producto', 'sub_ubicacion', 'lote')
         verbose_name_plural = "Stocks"
 
     def __str__(self):
-        return f"{self.producto.nombre} - {self.sub_ubicacion.nombre}: {self.cantidad}"
+        lote_info = f" - Lote: {self.lote}" if self.lote else ""
+        return f"{self.producto.nombre} - {self.sub_ubicacion.nombre}: {self.cantidad}{lote_info}"
+    
+    @property
+    def fecha_vencimiento(self):
+        """Calcula la fecha de vencimiento basada en fecha_ingreso y dias_caducidad del producto"""
+        if self.fecha_ingreso and self.producto.dias_caducidad:
+            return self.fecha_ingreso + timedelta(days=self.producto.dias_caducidad)
+        return None
+    
+    @property
+    def dias_para_vencer(self):
+        """Calcula cuántos días faltan para que venza"""
+        from datetime import date
+        if self.fecha_vencimiento:
+            delta = self.fecha_vencimiento - date.today()
+            return delta.days
+        return None
     
 class Pedido(models.Model):
     ESTADOS = (
@@ -54,12 +85,42 @@ class Pedido(models.Model):
                 if not item.sub_ubicacion_destino:
                     raise Exception(f"El producto {item.producto.nombre} no tiene una sub-ubicación asignada.")
                 
+                # Determinar si debemos crear un nuevo lote
+                producto = item.producto
                 
-                stock_existente, created = Stock.objects.get_or_create(
-                    producto=item.producto,
-                    sub_ubicacion=item.sub_ubicacion_destino,
-                    defaults={'cantidad': 0}
-                )
+                if producto.dias_caducidad:
+                    # Productos con caducidad: crear nuevo lote con fecha de hoy
+                    from datetime import date
+                    import time
+                    import random
+                    
+                    fecha_hoy = date.today()
+                    timestamp = int(time.time() * 1000)
+                    random_suffix = random.randint(1000, 9999)
+                    nuevo_lote = f"LOTE-{timestamp}-{random_suffix}"
+                    
+                    # Crear o actualizar el stock con el nuevo lote
+                    stock_existente, created = Stock.objects.get_or_create(
+                        producto=producto,
+                        sub_ubicacion=item.sub_ubicacion_destino,
+                        lote=nuevo_lote,
+                        defaults={
+                            'cantidad': 0,
+                            'fecha_ingreso': fecha_hoy
+                        }
+                    )
+                    
+                    if not created and not stock_existente.fecha_ingreso:
+                        stock_existente.fecha_ingreso = fecha_hoy
+                    
+                else:
+                    # Productos sin caducidad: consolidar en un único registro
+                    stock_existente, created = Stock.objects.get_or_create(
+                        producto=producto,
+                        sub_ubicacion=item.sub_ubicacion_destino,
+                        lote=None,
+                        defaults={'cantidad': 0}
+                    )
 
                 stock_existente.cantidad += item.cantidad
                 stock_existente.save()

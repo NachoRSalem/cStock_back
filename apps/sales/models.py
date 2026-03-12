@@ -19,17 +19,33 @@ class Venta(models.Model):
         with transaction.atomic():
             total_venta = 0
             for item in items_data:
-                # 1. Validar y descontar Stock
-                stock_actual = Stock.objects.select_for_update().get(
+                # 1. Validar y descontar Stock usando FIFO (First In, First Out)
+                # Obtener todos los lotes del producto en esta sub-ubicación
+                stocks_disponibles = Stock.objects.select_for_update().filter(
                     producto=item['producto'],
-                    sub_ubicacion=item['sub_ubicacion_origen']
-                )
-
-                if stock_actual.cantidad < item['cantidad']:
+                    sub_ubicacion=item['sub_ubicacion_origen'],
+                    cantidad__gt=0
+                ).order_by('fecha_ingreso', 'id')
+                
+                if not stocks_disponibles.exists():
+                    raise Exception(f"No hay stock de {item['producto'].nombre} en {item['sub_ubicacion_origen'].nombre}")
+                
+                # Verificar que hay stock suficiente en total
+                total_disponible = sum(s.cantidad for s in stocks_disponibles)
+                if total_disponible < item['cantidad']:
                     raise Exception(f"Stock insuficiente de {item['producto'].nombre} en {item['sub_ubicacion_origen'].nombre}")
 
-                stock_actual.cantidad -= item['cantidad']
-                stock_actual.save()
+                # Descontar de los lotes usando FIFO
+                cantidad_restante = item['cantidad']
+                for stock_actual in stocks_disponibles:
+                    if cantidad_restante <= 0:
+                        break
+                    
+                    cantidad_a_descontar = min(stock_actual.cantidad, cantidad_restante)
+                    stock_actual.cantidad -= cantidad_a_descontar
+                    stock_actual.save()
+                    
+                    cantidad_restante -= cantidad_a_descontar
 
                 # 2. Crear el item de venta
                 VentaItem.objects.create(

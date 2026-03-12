@@ -5,7 +5,7 @@ Uso: python manage.py seed
 
 import random
 from decimal import Decimal
-from datetime import timedelta
+from datetime import timedelta, date
 from django.core.management.base import BaseCommand
 from django.contrib.auth import get_user_model
 from django.utils import timezone
@@ -166,41 +166,49 @@ class Command(BaseCommand):
             cats[nombre] = Categoria.objects.create(nombre=nombre)
 
         productos_def = [
-            # nombre                               categoria              conservacion  precio  costo   sku
-            ("Coca-Cola 500ml",                   "Bebidas",             "ambiente",   1200,   800,   "BEB001"),
-            ("Pepsi 500ml",                       "Bebidas",             "ambiente",   1100,   740,   "BEB002"),
-            ("Sprite 500ml",                      "Bebidas",             "ambiente",   1100,   740,   "BEB003"),
-            ("Fanta Naranja 500ml",               "Bebidas",             "ambiente",   1100,   740,   "BEB004"),
-            ("Agua Mineral Villavicencio 500ml",  "Bebidas",             "ambiente",    500,   310,   "BEB005"),
-            ("Gatorade Naranja 500ml",            "Bebidas",             "ambiente",   1400,   950,   "BEB006"),
-            ("Jugo Cepita Naranja 200ml",         "Bebidas",             "heladera",    600,   380,   "BEB007"),
-            ("Leche La Serenísima Entera 1L",     "Lácteos y Fiambres",  "heladera",   1300,   950,   "LAC001"),
-            ("Yogur Danone Frutilla 200g",        "Lácteos y Fiambres",  "heladera",    700,   450,   "LAC002"),
-            ("Queso Cremoso por 200g",            "Lácteos y Fiambres",  "heladera",   2500,  1800,   "LAC003"),
-            ("Jamón Cocido por 200g",             "Lácteos y Fiambres",  "heladera",   2200,  1600,   "LAC004"),
-            ("Alfajor Oreo",                      "Golosinas",           "ambiente",    800,   550,   "GOL001"),
-            ("Alfajor Milka",                     "Golosinas",           "ambiente",    900,   610,   "GOL002"),
-            ("Chocolate Blanco Cofler 55g",       "Golosinas",           "ambiente",    600,   360,   "GOL003"),
-            ("Caramelos Halls Sin Azúcar",        "Golosinas",           "ambiente",    500,   300,   "GOL004"),
-            ("Chicle Beldent Menta x10",          "Golosinas",           "ambiente",    400,   250,   "GOL005"),
-            ("Chupetín Pops",                     "Golosinas",           "ambiente",    200,   110,   "GOL006"),
-            ("Palitos de Queso Pehuamar 70g",     "Snacks",              "ambiente",    900,   600,   "SNA001"),
-            ("Papas Fritas Lay's Classic 70g",    "Snacks",              "ambiente",   1000,   700,   "SNA002"),
-            ("Maní con Sal Pehuamar 100g",        "Snacks",              "ambiente",    800,   500,   "SNA003"),
-            ("Galletitas Oreo x8",                "Galletitas",          "ambiente",    700,   450,   "GAL001"),
-            ("Galletitas Toddy x16",              "Galletitas",          "ambiente",    600,   400,   "GAL002"),
-            ("Galletitas Crackers Terrabusi",     "Galletitas",          "ambiente",    500,   320,   "GAL003"),
-            ("Galletitas de Limón Granix",        "Galletitas",          "ambiente",    650,   430,   "GAL004"),
-            ("Atún al Natural La Campagnola",     "Conservas",           "ambiente",   1400,   950,   "CON001"),
-            ("Tomate Triturado Arcor 400g",       "Conservas",           "ambiente",    900,   580,   "CON002"),
-            ("Mayonesa Hellmann's 250g",          "Conservas",           "ambiente",   1800,  1200,   "CON003"),
-            ("Helado Palito Bon o Bon",           "Congelados",          "freezer",     800,   490,   "CON004"),
-            ("Empanadas Congeladas La Salteña x12","Congelados",         "freezer",    2800,  2000,   "CON005"),
-            ("Limpol Cloro 500ml",                "Limpieza",            "ambiente",    900,   580,   "LIM001"),
+            # nombre                               categoria              conservacion  precio  costo   sku      dias_caducidad
+            # Bebidas - Caducidad larga (180 días = 6 meses)
+            ("Coca-Cola 500ml",                   "Bebidas",             "ambiente",   1200,   800,   "BEB001",  180),
+            ("Pepsi 500ml",                       "Bebidas",             "ambiente",   1100,   740,   "BEB002",  180),
+            ("Sprite 500ml",                      "Bebidas",             "ambiente",   1100,   740,   "BEB003",  180),
+            ("Fanta Naranja 500ml",               "Bebidas",             "ambiente",   1100,   740,   "BEB004",  180),
+            ("Agua Mineral Villavicencio 500ml",  "Bebidas",             "ambiente",    500,   310,   "BEB005",  365),  # Agua dura más
+            ("Gatorade Naranja 500ml",            "Bebidas",             "ambiente",   1400,   950,   "BEB006",  180),
+            ("Jugo Cepita Naranja 200ml",         "Bebidas",             "heladera",    600,   380,   "BEB007",  60),   # Jugos refrigerados duran menos
+            # Lácteos y Fiambres - Caducidad corta (15-30 días)
+            ("Leche La Serenísima Entera 1L",     "Lácteos y Fiambres",  "heladera",   1300,   950,   "LAC001",  15),
+            ("Yogur Danone Frutilla 200g",        "Lácteos y Fiambres",  "heladera",    700,   450,   "LAC002",  20),
+            ("Queso Cremoso por 200g",            "Lácteos y Fiambres",  "heladera",   2500,  1800,   "LAC003",  30),
+            ("Jamón Cocido por 200g",             "Lácteos y Fiambres",  "heladera",   2200,  1600,   "LAC004",  10),   # Fiambres frescos duran poco
+            # Golosinas - Caducidad media a larga (90-365 días)
+            ("Alfajor Oreo",                      "Golosinas",           "ambiente",    800,   550,   "GOL001",  120),
+            ("Alfajor Milka",                     "Golosinas",           "ambiente",    900,   610,   "GOL002",  120),
+            ("Chocolate Blanco Cofler 55g",       "Golosinas",           "ambiente",    600,   360,   "GOL003",  90),
+            ("Caramelos Halls Sin Azúcar",        "Golosinas",           "ambiente",    500,   300,   "GOL004",  365),  # Caramelos duran mucho
+            ("Chicle Beldent Menta x10",          "Golosinas",           "ambiente",    400,   250,   "GOL005",  365),
+            ("Chupetín Pops",                     "Golosinas",           "ambiente",    200,   110,   "GOL006",  365),
+            # Snacks - Caducidad media (60-90 días)
+            ("Palitos de Queso Pehuamar 70g",     "Snacks",              "ambiente",    900,   600,   "SNA001",  60),
+            ("Papas Fritas Lay's Classic 70g",    "Snacks",              "ambiente",   1000,   700,   "SNA002",  90),
+            ("Maní con Sal Pehuamar 100g",        "Snacks",              "ambiente",    800,   500,   "SNA003",  90),
+            # Galletitas - Caducidad media (90-120 días)
+            ("Galletitas Oreo x8",                "Galletitas",          "ambiente",    700,   450,   "GAL001",  120),
+            ("Galletitas Toddy x16",              "Galletitas",          "ambiente",    600,   400,   "GAL002",  120),
+            ("Galletitas Crackers Terrabusi",     "Galletitas",          "ambiente",    500,   320,   "GAL003",  90),
+            ("Galletitas de Limón Granix",        "Galletitas",          "ambiente",    650,   430,   "GAL004",  90),
+            # Conservas - SIN caducidad (productos estables)
+            ("Atún al Natural La Campagnola",     "Conservas",           "ambiente",   1400,   950,   "CON001",  None),  # Sin vencimiento
+            ("Tomate Triturado Arcor 400g",       "Conservas",           "ambiente",    900,   580,   "CON002",  None),
+            ("Mayonesa Hellmann's 250g",          "Conservas",           "ambiente",   1800,  1200,   "CON003",  None),
+            # Congelados - Caducidad larga (180 días)
+            ("Helado Palito Bon o Bon",           "Congelados",          "freezer",     800,   490,   "CON004",  180),
+            ("Empanadas Congeladas La Salteña x12","Congelados",         "freezer",    2800,  2000,   "CON005",  180),
+            # Limpieza - SIN caducidad
+            ("Limpol Cloro 500ml",                "Limpieza",            "ambiente",    900,   580,   "LIM001",  None),
         ]
 
         productos = []
-        for nombre, cat_nombre, conservacion, precio, costo, sku in productos_def:
+        for nombre, cat_nombre, conservacion, precio, costo, sku, dias_caducidad in productos_def:
             p = Producto.objects.create(
                 nombre=nombre,
                 categoria=cats[cat_nombre],
@@ -208,6 +216,7 @@ class Command(BaseCommand):
                 precio_venta=Decimal(str(precio)),
                 costo_compra=Decimal(str(costo)),
                 sku=sku,
+                dias_caducidad=dias_caducidad,
             )
             productos.append(p)
 
@@ -222,10 +231,17 @@ class Command(BaseCommand):
         from apps.inventory.models import Stock
 
         total = 0
+        hoy = date.today()
+        
+        # Categorizar productos por días de caducidad
+        prods_sin_vencimiento = [p for p in productos if p.dias_caducidad is None]
+        prods_con_vencimiento = [p for p in productos if p.dias_caducidad is not None]
+        
         for nombre, ub in ubicaciones.items():
             subs = sub_ubicaciones_map[nombre]
-            for prod in productos:
-                # Elegir la sub-ubicación correcta según el tipo de conservación
+            
+            # Productos SIN vencimiento (conservas, limpieza, etc.)
+            for prod in prods_sin_vencimiento:
                 if prod.tipo_conservacion == "freezer":
                     sub_list = subs["freezer"]
                 elif prod.tipo_conservacion == "heladera":
@@ -239,10 +255,59 @@ class Command(BaseCommand):
                     producto=prod,
                     sub_ubicacion=sub,
                     cantidad=cantidad,
+                    # Sin fecha_ingreso ni lote para productos sin caducidad
                 )
                 total += 1
+            
+            # Productos CON vencimiento - crear múltiples lotes con diferentes estados
+            for prod in prods_con_vencimiento:
+                if prod.tipo_conservacion == "freezer":
+                    sub_list = subs["freezer"]
+                elif prod.tipo_conservacion == "heladera":
+                    sub_list = subs["heladera"]
+                else:
+                    sub_list = subs["ambiente"]
 
-        self.stdout.write(f"   ✓ {total} registros de stock creados")
+                sub = random.choice(sub_list)
+                dias_caducidad = prod.dias_caducidad
+                
+                # Crear 1-3 lotes diferentes por producto/ubicación
+                num_lotes = random.randint(1, 3)
+                
+                for i in range(num_lotes):
+                    # Decidir el estado del lote
+                    estado = random.choice([
+                        "vigente",      # 40% - Stock reciente
+                        "vigente",
+                        "por_vencer",   # 30% - Cerca del vencimiento
+                        "por_vencer",
+                        "vencido",      # 30% - Ya vencido
+                    ])
+                    
+                    if estado == "vigente":
+                        # Producto reciente: ingresó hace 0-30% de su vida útil
+                        dias_desde_ingreso = random.randint(0, int(dias_caducidad * 0.3))
+                    elif estado == "por_vencer":
+                        # Por vencer: ingresó hace 70-95% de su vida útil
+                        dias_desde_ingreso = random.randint(int(dias_caducidad * 0.7), int(dias_caducidad * 0.95))
+                    else:  # vencido
+                        # Vencido: ingresó hace más del 100% de su vida útil
+                        dias_desde_ingreso = random.randint(dias_caducidad + 1, dias_caducidad + 30)
+                    
+                    fecha_ingreso = hoy - timedelta(days=dias_desde_ingreso)
+                    lote = f"LOTE-{prod.sku}-{fecha_ingreso.strftime('%Y%m%d')}-{i+1}"
+                    cantidad = random.randint(5, 30)
+                    
+                    Stock.objects.create(
+                        producto=prod,
+                        sub_ubicacion=sub,
+                        cantidad=cantidad,
+                        fecha_ingreso=fecha_ingreso,
+                        lote=lote,
+                    )
+                    total += 1
+
+        self.stdout.write(f"   ✓ {total} registros de stock creados (incluyendo lotes con diferentes vencimientos)")
 
     # ─────────────────────────────────────────────────────────────────────────
     # PEDIDOS
@@ -270,11 +335,15 @@ class Command(BaseCommand):
                 dias_atras = random.randint(1, 30)
                 fecha = timezone.now() - timedelta(days=dias_atras)
 
+                # Decidir si proviene del almacén o distribuidor
+                proviene_de_almacen = estado in ("recibido", "aprobado") and random.choice([True, False])
+                
                 pedido = Pedido(
                     creado_por=user,
                     destino=ub,
                     estado=estado,
-                    provisto_desde_almacen=(estado in ("recibido", "aprobado") and random.choice([True, False])),
+                    origen_tipo="sucursal" if proviene_de_almacen else "distribuidor",
+                    origen_sucursal=almacen_ub if proviene_de_almacen else None,
                 )
                 # Forzar la fecha sobreescribiendo auto_now_add
                 pedido.save()
@@ -295,7 +364,7 @@ class Command(BaseCommand):
                         sub_dest = None
 
                     # sub_ubicacion_origen sólo si viene del almacén
-                    if pedido.provisto_desde_almacen and estado in ("recibido", "aprobado"):
+                    if proviene_de_almacen and estado in ("recibido", "aprobado"):
                         if prod.tipo_conservacion == "freezer":
                             sub_orig = random.choice(almacen_subs["freezer"])
                         elif prod.tipo_conservacion == "heladera":
@@ -363,12 +432,26 @@ class Command(BaseCommand):
 
                     cantidad = random.randint(1, 4)
 
-                    # Asegurar stock suficiente para vender
-                    stock_obj, _ = Stock.objects.get_or_create(
+                    # Buscar stock disponible para este producto/sub-ubicación
+                    # Si hay múltiples lotes, tomar el más antiguo (FIFO)
+                    stock_objs = Stock.objects.filter(
                         producto=prod,
                         sub_ubicacion=sub,
-                        defaults={"cantidad": 0},
-                    )
+                    ).order_by('fecha_ingreso')
+                    
+                    stock_obj = None
+                    if stock_objs.exists():
+                        # Tomar el primer lote disponible
+                        stock_obj = stock_objs.first()
+                    else:
+                        # Crear stock sin lote si no existe
+                        stock_obj = Stock.objects.create(
+                            producto=prod,
+                            sub_ubicacion=sub,
+                            cantidad=0,
+                        )
+                    
+                    # Asegurar stock suficiente para vender
                     if stock_obj.cantidad < cantidad:
                         stock_obj.cantidad = cantidad + 10
                         stock_obj.save()
