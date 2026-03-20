@@ -60,6 +60,7 @@ class Pedido(models.Model):
     TIPO_ORIGEN = (
         ('distribuidor', 'Distribuidor'),
         ('sucursal', 'Sucursal'),
+        ('mixto', 'Mixto'),
     )
     
     creado_por = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
@@ -163,6 +164,16 @@ class PedidoItem(models.Model):
         blank=True,
         help_text="Array de {sub_ubicacion_id, cantidad} cuando el stock se toma de múltiples sub-ubicaciones"
     )
+
+    @property
+    def es_de_distribuidor(self):
+        """Retorna True si este item proviene de distribuidor (sub_ubicaciones_origen_detalle vacío)"""
+        return not self.sub_ubicaciones_origen_detalle
+
+    @property
+    def es_de_sucursal(self):
+        """Retorna True si este item proviene de sucursal (sub_ubicaciones_origen_detalle con datos)"""
+        return bool(self.sub_ubicaciones_origen_detalle)
 
     def __str__(self):
         return f"{self.cantidad} x {self.producto.nombre} (Pedido {self.pedido.id})"

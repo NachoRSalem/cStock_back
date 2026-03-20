@@ -46,15 +46,15 @@ class PedidoViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['post'], permission_classes=[IsAdminUser])
     def aprobar(self, request, pk=None):
         """
-        El Admin aprueba el pedido pendiente.
-        Body esperado:
+        El Admin aprueba el pedido pendiente con origen mixto.
+        Body esperado (nuevo formato):
         {
-            "origen_tipo": "distribuidor" | "sucursal",
-            "origen_sucursal": <id> (requerido si origen_tipo='sucursal'),
             "items": [
                 {
                     "id": <pedido_item_id>,
-                    "sub_ubicacion_origen": <sub_ubicacion_id del origen>
+                    "origen_tipo": "distribuidor" | "sucursal",
+                    "origen_sucursal": <id> (solo si origen_tipo='sucursal'),
+                    "sub_ubicaciones_origen": [...] (solo si origen_tipo='sucursal')
                 },
                 ...
             ]
@@ -62,42 +62,61 @@ class PedidoViewSet(viewsets.ModelViewSet):
         """
         pedido = self.get_object()
         if pedido.estado != 'pendiente':
-            return Response({'error': 'Solo pedidos pendientes pueden ser aprobados.'}, 
+            return Response({'error': 'Solo pedidos pendientes pueden ser aprobados.'},
                             status=status.HTTP_400_BAD_REQUEST)
-        
-        origen_tipo = request.data.get('origen_tipo', 'distribuidor')
-        origen_sucursal_id = request.data.get('origen_sucursal')
+
         items_data = request.data.get('items', [])
-        
+
+        # Compatibilidad con formato antiguo (origen_tipo a nivel de pedido)
+        origen_tipo_legacy = request.data.get('origen_tipo')
+        origen_sucursal_legacy = request.data.get('origen_sucursal')
+
+        if origen_tipo_legacy and not any('origen_tipo' in item for item in items_data):
+            # Formato antiguo: aplicar origen_tipo a todos los items
+            for item_data in items_data:
+                item_data['origen_tipo'] = origen_tipo_legacy
+                if origen_tipo_legacy == 'sucursal':
+                    item_data['origen_sucursal'] = origen_sucursal_legacy
+
         try:
             with transaction.atomic():
-                if origen_tipo == 'sucursal':
-                    # Validar que se especificó la sucursal origen
-                    if not origen_sucursal_id:
-                        raise Exception("Debe especificar la sucursal de origen cuando origen_tipo='sucursal'")
-                    
-                    # Descontar stock de la sucursal origen
-                    for item_data in items_data:
-                        try:
-                            item = PedidoItem.objects.get(id=item_data['id'], pedido=pedido)
-                            
-                            # Soportar múltiples sub-ubicaciones origen
+                # Contadores para determinar el origen_tipo del pedido
+                items_distribuidor = []
+                items_sucursal = []
+                sucursales_origen_set = set()
+
+                # Procesar cada item según su origen
+                for item_data in items_data:
+                    try:
+                        item = PedidoItem.objects.get(id=item_data['id'], pedido=pedido)
+                        origen_tipo_item = item_data.get('origen_tipo', 'distribuidor')
+
+                        if origen_tipo_item == 'sucursal':
+                            items_sucursal.append(item_data)
+                            origen_sucursal_id = item_data.get('origen_sucursal')
+
+                            if not origen_sucursal_id:
+                                raise Exception(f"El producto {item.producto.nombre} marcado como 'sucursal' no tiene sucursal de origen especificada.")
+
+                            sucursales_origen_set.add(origen_sucursal_id)
+
+                            # Reutilizar lógica existente de descuento FIFO
                             sub_ubicaciones_origen = item_data.get('sub_ubicaciones_origen', [])
-                            
+
                             if not sub_ubicaciones_origen:
                                 raise Exception(f"El producto {item.producto.nombre} no tiene sub-ubicaciones de origen especificadas.")
-                            
+
                             # Validar que la suma de cantidades coincide con la cantidad pedida
                             total_cantidad = sum(ub['cantidad'] for ub in sub_ubicaciones_origen)
                             if total_cantidad != item.cantidad:
                                 raise Exception(f"La cantidad total asignada para {item.producto.nombre} ({total_cantidad}) no coincide con la cantidad pedida ({item.cantidad})")
-                            
-                            # Procesar cada sub-ubicación
+
+                            # Procesar cada sub-ubicación y descontar stock usando FIFO
                             detalles_origen = []
                             for ub_data in sub_ubicaciones_origen:
                                 sub_ubicacion_id = ub_data['sub_ubicacion']
                                 cantidad_a_tomar = ub_data['cantidad']
-                                
+
                                 # Obtener todos los lotes del producto en esta sub-ubicación
                                 # Ordenar por fecha_ingreso (FIFO) - los sin fecha van al final
                                 stocks_disponibles = Stock.objects.filter(
@@ -105,51 +124,71 @@ class PedidoViewSet(viewsets.ModelViewSet):
                                     sub_ubicacion_id=sub_ubicacion_id,
                                     cantidad__gt=0
                                 ).order_by('fecha_ingreso', 'id')
-                                
+
                                 if not stocks_disponibles.exists():
                                     raise Exception(f"No hay stock de {item.producto.nombre} en la sub-ubicación especificada de la sucursal origen.")
-                                
+
                                 # Verificar que hay stock suficiente en total
                                 total_disponible = sum(s.cantidad for s in stocks_disponibles)
                                 if total_disponible < cantidad_a_tomar:
                                     raise Exception(f"Stock insuficiente en la sub-ubicación para {item.producto.nombre}. Disponible: {total_disponible}, Requerido: {cantidad_a_tomar}")
-                                
+
                                 # Descontar de los lotes usando FIFO
                                 cantidad_restante = cantidad_a_tomar
                                 for stock_origen in stocks_disponibles:
                                     if cantidad_restante <= 0:
                                         break
-                                    
+
                                     cantidad_a_descontar = min(stock_origen.cantidad, cantidad_restante)
                                     stock_origen.cantidad -= cantidad_a_descontar
                                     stock_origen.save()
-                                    
+
                                     cantidad_restante -= cantidad_a_descontar
-                                
-                                # Guardar detalle (usamos el primer stock para obtener el nombre)
+
+                                # Guardar detalle
                                 detalles_origen.append({
                                     'sub_ubicacion_id': sub_ubicacion_id,
                                     'sub_ubicacion_nombre': stocks_disponibles.first().sub_ubicacion.nombre,
                                     'cantidad': cantidad_a_tomar
                                 })
-                            
+
                             # Guardar los detalles en el item
                             item.sub_ubicaciones_origen_detalle = detalles_origen
-                            # También guardar en el campo legacy por compatibilidad (la primera sub-ubicación)
                             if detalles_origen:
                                 item.sub_ubicacion_origen_id = detalles_origen[0]['sub_ubicacion_id']
                             item.save()
-                        
-                        except PedidoItem.DoesNotExist:
-                            raise Exception(f"El item con id {item_data['id']} no pertenece al pedido {pedido.id}")
-                
+
+                        elif origen_tipo_item == 'distribuidor':
+                            items_distribuidor.append(item_data)
+                            # No descontar stock, dejar sub_ubicaciones_origen_detalle vacío
+                            item.sub_ubicaciones_origen_detalle = None
+                            item.sub_ubicacion_origen = None
+                            item.save()
+
+                    except PedidoItem.DoesNotExist:
+                        raise Exception(f"El item con id {item_data['id']} no pertenece al pedido {pedido.id}")
+
+                # Determinar el origen_tipo del pedido
+                if len(items_sucursal) == 0:
+                    pedido.origen_tipo = 'distribuidor'
+                    pedido.origen_sucursal = None
+                elif len(items_distribuidor) == 0:
+                    pedido.origen_tipo = 'sucursal'
+                    # Usar la primera sucursal origen encontrada
+                    pedido.origen_sucursal_id = list(sucursales_origen_set)[0] if sucursales_origen_set else None
+                else:
+                    pedido.origen_tipo = 'mixto'
+                    # Para pedidos mixtos, guardar la primera sucursal origen
+                    pedido.origen_sucursal_id = list(sucursales_origen_set)[0] if sucursales_origen_set else None
+
                 pedido.estado = 'aprobado'
-                pedido.origen_tipo = origen_tipo
-                pedido.origen_sucursal_id = origen_sucursal_id if origen_tipo == 'sucursal' else None
                 pedido.save()
-                
-            return Response({'status': 'Pedido aprobado exitosamente.'})
-        
+
+            return Response({
+                'status': 'Pedido aprobado exitosamente.',
+                'origen_tipo': pedido.origen_tipo
+            })
+
         except Exception as e:
             return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
     
