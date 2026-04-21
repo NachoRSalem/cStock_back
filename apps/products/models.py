@@ -18,6 +18,10 @@ class Producto(models.Model):
     tipo_conservacion = models.CharField(max_length=20, choices=TIPO_ALMACENAMIENTO)
     precio_venta = models.DecimalField(max_digits=10, decimal_places=2)
     costo_compra = models.DecimalField(max_digits=10, decimal_places=2) # Para el reporte de ganancias
+    es_fabricable = models.BooleanField(
+        default=False,
+        help_text="Indica si este producto se fabrica a partir de otros insumos"
+    )
     sku = models.CharField(max_length=50, unique=True, blank=True, null=True) # Código de barras si usás
     dias_caducidad = models.PositiveIntegerField(
         null=True, 

@@ -4,11 +4,12 @@ from apps.locations.models import SubUbicacion, Ubicacion
 from core import settings
 from datetime import timedelta
 import json
+from decimal import Decimal
 
 class Stock(models.Model):
     producto = models.ForeignKey(Producto, on_delete=models.CASCADE, related_name='stocks')
     sub_ubicacion = models.ForeignKey(SubUbicacion, on_delete=models.CASCADE, related_name='stocks')
-    cantidad = models.PositiveIntegerField(default=0)
+    cantidad = models.DecimalField(max_digits=12, decimal_places=3, default=Decimal('0.000'))
     ultima_actualizacion = models.DateTimeField(auto_now=True)
     fecha_ingreso = models.DateField(
         null=True, 

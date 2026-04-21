@@ -3,6 +3,7 @@ from .models import Pedido, PedidoItem, Stock
 from apps.locations.serializers import UbicacionSerializer
 
 class StockSerializer(serializers.ModelSerializer):
+    cantidad = serializers.DecimalField(max_digits=12, decimal_places=3, coerce_to_string=False)
     producto_nombre = serializers.ReadOnlyField(source='producto.nombre')
     producto_tipo_conservacion = serializers.ReadOnlyField(source='producto.tipo_conservacion')
     producto_dias_caducidad = serializers.ReadOnlyField(source='producto.dias_caducidad')
