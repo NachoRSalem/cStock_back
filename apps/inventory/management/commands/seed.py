@@ -18,28 +18,28 @@ class Command(BaseCommand):
     help = "Limpia la base de datos y la puebla con datos de prueba realistas."
 
     def handle(self, *args, **options):
-        self.stdout.write(self.style.WARNING("⚠️  Limpiando datos existentes..."))
+        self.stdout.write("Limpiando datos existentes...")
         self._clear_data()
 
-        self.stdout.write("📍 Creando ubicaciones y sub-ubicaciones...")
+        self.stdout.write("[LOC] Creando ubicaciones y sub-ubicaciones...")
         ubicaciones, sub_ubicaciones_map = self._create_locations()
 
-        self.stdout.write("👤 Creando usuarios...")
+        self.stdout.write("[USER] Creando usuarios...")
         users_map = self._create_users(ubicaciones)
 
-        self.stdout.write("📦 Creando categorías y productos...")
+        self.stdout.write("[PROD] Creando categorias y productos...")
         productos = self._create_products()
 
-        self.stdout.write("🗃️  Creando stock inicial...")
+        self.stdout.write("[STOCK] Creando stock inicial...")
         self._create_stock(ubicaciones, sub_ubicaciones_map, productos)
 
-        self.stdout.write("🛒 Creando pedidos...")
+        self.stdout.write("[PED] Creando pedidos...")
         self._create_pedidos(ubicaciones, sub_ubicaciones_map, productos, users_map)
 
-        self.stdout.write("💰 Creando ventas...")
+        self.stdout.write("[VENTA] Creando ventas...")
         self._create_ventas(ubicaciones, sub_ubicaciones_map, productos, users_map)
 
-        self.stdout.write(self.style.SUCCESS("\n✅ Seed completado exitosamente!"))
+        self.stdout.write(self.style.SUCCESS("\nSeed completado!"))
         self._print_summary(users_map)
 
     # ─────────────────────────────────────────────────────────────────────────
@@ -51,9 +51,14 @@ class Command(BaseCommand):
         from apps.inventory.models import PedidoItem, Pedido, Stock
         from apps.locations.models import SubUbicacion, Ubicacion
         from apps.products.models import Producto, Categoria
+        from apps.recipes.models import Fabricacion, FabricacionConsumo, RecetaInsumo, Receta
 
         VentaItem.objects.all().delete()
         Venta.objects.all().delete()
+        FabricacionConsumo.objects.all().delete()
+        Fabricacion.objects.all().delete()
+        RecetaInsumo.objects.all().delete()
+        Receta.objects.all().delete()
         PedidoItem.objects.all().delete()
         Pedido.objects.all().delete()
         Stock.objects.all().delete()
@@ -63,7 +68,7 @@ class Command(BaseCommand):
         User.objects.filter(username="admin").delete()
         Producto.objects.all().delete()
         Categoria.objects.all().delete()
-        self.stdout.write("   ✓ Datos anteriores eliminados.")
+        self.stdout.write("   Datos anteriores eliminados.")
 
     # ─────────────────────────────────────────────────────────────────────────
     # LOCATIONS
@@ -73,29 +78,63 @@ class Command(BaseCommand):
         from apps.locations.models import Ubicacion, SubUbicacion
 
         ubicaciones_def = [
-            ("Kiosco Campo",     "sucursal"),
-            ("Kiosco Centro",    "sucursal"),
-            ("Comedor Campo",    "sucursal"),
-            ("Comedor Centro",   "sucursal"),
-            ("Hidrocinetic",     "sucursal"),
-            ("Almacen el dique", "almacen"),
+            ("Kiosco Campo",    "sucursal"),
+            ("Comedor Campo",   "sucursal"),
+            ("Kiosco Centro",   "sucursal"),
+            ("Colegio Comedor Centro", "sucursal"),
+            ("Almacen",         "almacen"),
+            ("Hidrocinetic",    "sucursal"),
         ]
 
         ubicaciones = {}
         sub_ubicaciones_map = {}
+
+        locations_specific = {
+            "Kiosco Campo": [
+                ("Heladera Bebida", "heladera"),
+                ("Depósito",        "ambiente"),
+            ],
+            "Comedor Campo": [
+                ("Heladera Postres",    "heladera"),
+                ("Heladera Mostrador",   "heladera"),
+                ("Heladera 2 Puertas",  "heladera"),
+                ("Heladera 4 Puertas",  "heladera"),
+                ("Freezer",             "freezer"),
+                ("Depósito",            "ambiente"),
+            ],
+            "Kiosco Centro": [
+                ("Heladera Bajo Mostrador 1", "heladera"),
+                ("Heladera Bajo Mostrador 2", "heladera"),
+                ("Heladera Bebida",           "heladera"),
+                ("Estantería Depósito",       "ambiente"),
+                ("Muestra para la Venta",    "ambiente"),
+            ],
+            "Colegio Comedor Centro": [
+                ("Heladera 4 Puertas", "heladera"),
+                ("Heladera Fiambre",   "heladera"),
+                ("Heladera Comedor",   "heladera"),
+                ("Heladera Jardín",    "heladera"),
+                ("Freezer Crudos",     "freezer"),
+                ("Freezer Cocidos",    "freezer"),
+                ("Depósito",           "ambiente"),
+            ],
+            "Almacen": [
+                ("Heladera",   "heladera"),
+                ("Freezer",    "freezer"),
+                ("Estantería", "ambiente"),
+            ],
+            "Hidrocinetic": [
+                ("Freezer",  "freezer"),
+                ("Heladera", "heladera"),
+            ],
+        }
 
         for nombre, tipo in ubicaciones_def:
             ub = Ubicacion.objects.create(nombre=nombre, tipo=tipo)
             ubicaciones[nombre] = ub
 
             subs = []
-            sub_defs = [
-                ("Góndola Principal", "ambiente"),
-                ("Estantería Varios", "ambiente"),
-                ("Freezer Central",   "freezer"),
-                ("Heladera 1",        "heladera"),
-            ]
-            for sub_nombre, sub_tipo in sub_defs:
+            for sub_nombre, sub_tipo in locations_specific[nombre]:
                 sub = SubUbicacion.objects.create(
                     ubicacion=ub,
                     nombre=sub_nombre,
@@ -109,7 +148,7 @@ class Command(BaseCommand):
                 "heladera": [s for s in subs if s.tipo == "heladera"],
                 "all":      subs,
             }
-            self.stdout.write(f"   ✓ {nombre} ({tipo}) — 4 sub-ubicaciones")
+            self.stdout.write(f"   -- {nombre} ({tipo}) -- {len(subs)} sub-ubicaciones")
 
         return ubicaciones, sub_ubicaciones_map
 
@@ -126,16 +165,16 @@ class Command(BaseCommand):
             last_name="Sistema",
             rol="admin",
         )
-        self.stdout.write("   ✓ admin / admin1234  (rol: admin)")
+        self.stdout.write(f"   -- admin / admin1234  (rol: admin)")
 
         users_map = {"admin": admin}
 
         sucursal_users = [
-            ("KioscoCampo",    "Kiosco Campo"),
-            ("KioscoCentro",   "Kiosco Centro"),
-            ("ComedorCampo",   "Comedor Campo"),
-            ("ComedorCentro",  "Comedor Centro"),
-            ("Hidrocinetic",   "Hidrocinetic"),
+            ("KioscoCampo",            "Kiosco Campo"),
+            ("KioscoCentro",           "Kiosco Centro"),
+            ("ComedorCampo",           "Comedor Campo"),
+            ("ColegioComedorCentro",   "Colegio Comedor Centro"),
+            ("Hidrocinetic",           "Hidrocinetic"),
         ]
 
         for username, sucursal_nombre in sucursal_users:
@@ -150,7 +189,7 @@ class Command(BaseCommand):
                 sucursal_asignada=ub,
             )
             users_map[sucursal_nombre] = u
-            self.stdout.write(f"   ✓ {username} / {password}  → {sucursal_nombre}")
+            self.stdout.write(f"   -- {username} / {password}  -> {sucursal_nombre}")
 
         return users_map
 
@@ -220,7 +259,7 @@ class Command(BaseCommand):
             )
             productos.append(p)
 
-        self.stdout.write(f"   ✓ {len(productos)} productos en {len(cats)} categorías")
+        self.stdout.write(f"   -- {len(productos)} productos en {len(cats)} categorias")
         return productos
 
     # ─────────────────────────────────────────────────────────────────────────
@@ -243,12 +282,14 @@ class Command(BaseCommand):
             # Productos SIN vencimiento (conservas, limpieza, etc.)
             for prod in prods_sin_vencimiento:
                 if prod.tipo_conservacion == "freezer":
-                    sub_list = subs["freezer"]
+                    sub_list = subs["freezer"] if subs["freezer"] else subs["ambiente"]
                 elif prod.tipo_conservacion == "heladera":
-                    sub_list = subs["heladera"]
+                    sub_list = subs["heladera"] if subs["heladera"] else subs["ambiente"]
                 else:
                     sub_list = subs["ambiente"]
 
+                if not sub_list:
+                    continue
                 sub = random.choice(sub_list)
                 cantidad = random.randint(8, 50)
                 Stock.objects.create(
@@ -262,42 +303,35 @@ class Command(BaseCommand):
             # Productos CON vencimiento - crear múltiples lotes con diferentes estados
             for prod in prods_con_vencimiento:
                 if prod.tipo_conservacion == "freezer":
-                    sub_list = subs["freezer"]
+                    sub_list = subs["freezer"] if subs["freezer"] else subs["ambiente"]
                 elif prod.tipo_conservacion == "heladera":
-                    sub_list = subs["heladera"]
+                    sub_list = subs["heladera"] if subs["heladera"] else subs["ambiente"]
                 else:
                     sub_list = subs["ambiente"]
 
+                if not sub_list:
+                    continue
                 sub = random.choice(sub_list)
                 dias_caducidad = prod.dias_caducidad
-                
-                # Crear 1-3 lotes diferentes por producto/ubicación
+
                 num_lotes = random.randint(1, 3)
-                
+
                 for i in range(num_lotes):
-                    # Decidir el estado del lote
                     estado = random.choice([
-                        "vigente",      # 40% - Stock reciente
-                        "vigente",
-                        "por_vencer",   # 30% - Cerca del vencimiento
-                        "por_vencer",
-                        "vencido",      # 30% - Ya vencido
+                        "vigente", "vigente", "por_vencer", "por_vencer", "vencido",
                     ])
-                    
+
                     if estado == "vigente":
-                        # Producto reciente: ingresó hace 0-30% de su vida útil
                         dias_desde_ingreso = random.randint(0, int(dias_caducidad * 0.3))
                     elif estado == "por_vencer":
-                        # Por vencer: ingresó hace 70-95% de su vida útil
                         dias_desde_ingreso = random.randint(int(dias_caducidad * 0.7), int(dias_caducidad * 0.95))
-                    else:  # vencido
-                        # Vencido: ingresó hace más del 100% de su vida útil
+                    else:
                         dias_desde_ingreso = random.randint(dias_caducidad + 1, dias_caducidad + 30)
-                    
+
                     fecha_ingreso = hoy - timedelta(days=dias_desde_ingreso)
                     lote = f"LOTE-{prod.sku}-{fecha_ingreso.strftime('%Y%m%d')}-{i+1}"
                     cantidad = random.randint(5, 30)
-                    
+
                     Stock.objects.create(
                         producto=prod,
                         sub_ubicacion=sub,
@@ -307,7 +341,7 @@ class Command(BaseCommand):
                     )
                     total += 1
 
-        self.stdout.write(f"   ✓ {total} registros de stock creados (incluyendo lotes con diferentes vencimientos)")
+        self.stdout.write(f"   -- {total} registros de stock creados")
 
     # ─────────────────────────────────────────────────────────────────────────
     # PEDIDOS
@@ -318,8 +352,8 @@ class Command(BaseCommand):
 
         sucursales_nombres = [n for n in ubicaciones if ubicaciones[n].tipo == "sucursal"]
         admin = users_map["admin"]
-        almacen_ub = ubicaciones["Almacen el dique"]
-        almacen_subs = sub_ubicaciones_map["Almacen el dique"]
+        almacen_ub = ubicaciones["Almacen"]
+        almacen_subs = sub_ubicaciones_map["Almacen"]
 
         # Cada sucursal tiene 5 pedidos con estados variados
         estados_secuencia = ["recibido", "recibido", "aprobado", "rechazado", "pendiente"]
@@ -352,25 +386,23 @@ class Command(BaseCommand):
                 for prod in productos_pedido:
                     cantidad = random.randint(5, 20)
 
-                    # sub_ubicacion_destino sólo en pedidos recibidos
                     if estado == "recibido":
-                        if prod.tipo_conservacion == "freezer":
+                        if prod.tipo_conservacion == "freezer" and subs["freezer"]:
                             sub_dest = random.choice(subs["freezer"])
-                        elif prod.tipo_conservacion == "heladera":
+                        elif prod.tipo_conservacion == "heladera" and subs["heladera"]:
                             sub_dest = random.choice(subs["heladera"])
                         else:
-                            sub_dest = random.choice(subs["ambiente"])
+                            sub_dest = random.choice(subs["ambiente"]) if subs["ambiente"] else None
                     else:
                         sub_dest = None
 
-                    # sub_ubicacion_origen sólo si viene del almacén
                     if proviene_de_almacen and estado in ("recibido", "aprobado"):
-                        if prod.tipo_conservacion == "freezer":
+                        if prod.tipo_conservacion == "freezer" and almacen_subs["freezer"]:
                             sub_orig = random.choice(almacen_subs["freezer"])
-                        elif prod.tipo_conservacion == "heladera":
+                        elif prod.tipo_conservacion == "heladera" and almacen_subs["heladera"]:
                             sub_orig = random.choice(almacen_subs["heladera"])
                         else:
-                            sub_orig = random.choice(almacen_subs["ambiente"])
+                            sub_orig = random.choice(almacen_subs["ambiente"]) if almacen_subs["ambiente"] else None
                     else:
                         sub_orig = None
 
@@ -385,7 +417,7 @@ class Command(BaseCommand):
 
                 total += 1
 
-        self.stdout.write(f"   ✓ {total} pedidos creados ({len(sucursales_nombres)} sucursales × 5 estados)")
+        self.stdout.write(f"   -- {total} pedidos creados")
 
     # ─────────────────────────────────────────────────────────────────────────
     # VENTAS
@@ -422,14 +454,15 @@ class Command(BaseCommand):
                 total_venta = Decimal("0")
 
                 for prod in prods_venta:
-                    # Elegir sub-ubicación correcta según conservación
-                    if prod.tipo_conservacion == "freezer":
+                    if prod.tipo_conservacion == "freezer" and subs["freezer"]:
                         sub = random.choice(subs["freezer"])
-                    elif prod.tipo_conservacion == "heladera":
+                    elif prod.tipo_conservacion == "heladera" and subs["heladera"]:
                         sub = random.choice(subs["heladera"])
                     else:
-                        sub = random.choice(subs["ambiente"])
+                        sub = random.choice(subs["ambiente"]) if subs["ambiente"] else None
 
+                    if not sub:
+                        continue
                     cantidad = random.randint(1, 4)
 
                     # Buscar stock disponible para este producto/sub-ubicación
@@ -475,26 +508,26 @@ class Command(BaseCommand):
                 Venta.objects.filter(pk=venta.pk).update(total=total_venta)
                 total_ventas += 1
 
-        self.stdout.write(f"   ✓ {total_ventas} ventas creadas, {total_items} items en total ({len(sucursales_nombres)} sucursales × 10)")
+        self.stdout.write(f"   -- {total_ventas} ventas creadas, {total_items} items")
 
     # ─────────────────────────────────────────────────────────────────────────
     # RESUMEN FINAL
     # ─────────────────────────────────────────────────────────────────────────
 
     def _print_summary(self, users_map):
-        self.stdout.write("\n" + "─" * 55)
-        self.stdout.write(self.style.SUCCESS("  RESUMEN DE ACCESO"))
-        self.stdout.write("─" * 55)
-        self.stdout.write(f"  {'ROL':<14} {'USERNAME':<20} {'PASSWORD'}")
-        self.stdout.write("─" * 55)
+        self.stdout.write("\n" + "-" * 40)
+        self.stdout.write("  RESUMEN DE ACCESO")
+        self.stdout.write("-" * 40)
+        self.stdout.write(f"  {'ROL':<14} {'USERNAME':<22} {'PASSWORD'}")
+        self.stdout.write("-" * 40)
         rows = [
-            ("admin",         "admin",          "admin1234"),
-            ("sucursal",      "KioscoCampo",    "KioscoCampo1234"),
-            ("sucursal",      "KioscoCentro",   "KioscoCentro1234"),
-            ("sucursal",      "ComedorCampo",   "ComedorCampo1234"),
-            ("sucursal",      "ComedorCentro",  "ComedorCentro1234"),
-            ("sucursal",      "Hidrocinetic",   "Hidrocinetic1234"),
+            ("admin",         "admin",                  "admin1234"),
+            ("sucursal",      "KioscoCampo",            "KioscoCampo1234"),
+            ("sucursal",      "KioscoCentro",           "KioscoCentro1234"),
+            ("sucursal",      "ComedorCampo",           "ComedorCampo1234"),
+            ("sucursal",      "ColegioComedorCentro",   "ColegioComedorCentro1234"),
+            ("sucursal",      "Hidrocinetic",           "Hidrocinetic1234"),
         ]
         for rol, user, pwd in rows:
-            self.stdout.write(f"  {rol:<14} {user:<20} {pwd}")
-        self.stdout.write("─" * 55)
+            self.stdout.write(f"  {rol:<14} {user:<22} {pwd}")
+        self.stdout.write("-" * 40)
