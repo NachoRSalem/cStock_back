@@ -30,6 +30,19 @@ class PedidoItemSerializer(serializers.ModelSerializer):
         model = PedidoItem
         fields = ['id', 'producto', 'producto_nombre', 'cantidad', 'precio_costo_momento', 'sub_ubicacion_destino', 'sub_ubicacion_origen']
 
+class PrecioHistoricoSerializer(serializers.ModelSerializer):
+    fecha = serializers.ReadOnlyField(source='pedido.fecha_creacion')
+    sucursal = serializers.ReadOnlyField(source='pedido.destino.nombre')
+    total = serializers.SerializerMethodField()
+
+    class Meta:
+        model = PedidoItem
+        fields = ['id', 'cantidad', 'precio_costo_momento', 'fecha', 'sucursal', 'total']
+
+    def get_total(self, obj):
+        return float(obj.cantidad) * float(obj.precio_costo_momento)
+
+
 class PedidoSerializer(serializers.ModelSerializer):
     items = PedidoItemSerializer(many=True) 
     destino_nombre = serializers.ReadOnlyField(source='destino.nombre')

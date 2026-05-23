@@ -9,8 +9,8 @@ from decimal import Decimal
 from collections import defaultdict
 
 from apps.users.permissions import IsAdminUser
-from .models import Venta, VentaItem
-from .serializers import VentaSerializer
+from .models import Venta, VentaItem, Ingreso
+from .serializers import VentaSerializer, IngresoSerializer
 from apps.locations.models import Ubicacion
 from apps.inventory.models import Stock, Pedido, PedidoItem
 from apps.products.models import Producto
@@ -372,4 +372,72 @@ class DashboardView(APIView):
             'pedidos_estado': pedidos_estado,
             'top_productos_stock_bajo': stock_bajo_data[:20],
             'comparativa_sucursales': comparativa_sucursales
+        })
+
+
+class IngresoViewSet(viewsets.ModelViewSet):
+    queryset = Ingreso.objects.all().select_related('registrado_por')
+    serializer_class = IngresoSerializer
+    permission_classes = [IsAdminUser]
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        fecha_desde = self.request.query_params.get('fecha_desde')
+        fecha_hasta = self.request.query_params.get('fecha_hasta')
+        if fecha_desde:
+            qs = qs.filter(fecha__gte=fecha_desde)
+        if fecha_hasta:
+            qs = qs.filter(fecha__lte=fecha_hasta)
+        return qs
+
+    def perform_create(self, serializer):
+        serializer.save(registrado_por=self.request.user)
+
+
+class BalanceView(APIView):
+    permission_classes = [IsAdminUser]
+
+    def get(self, request):
+        fecha_desde = request.query_params.get('fecha_desde')
+        fecha_hasta = request.query_params.get('fecha_hasta')
+
+        # Egresos = Pedidos recibidos (costo de mercadería)
+        egresos_qs = PedidoItem.objects.filter(
+            pedido__estado='recibido'
+        )
+        if fecha_desde:
+            egresos_qs = egresos_qs.filter(pedido__fecha_creacion__gte=fecha_desde)
+        if fecha_hasta:
+            egresos_qs = egresos_qs.filter(pedido__fecha_creacion__lte=fecha_hasta)
+
+        total_egresos = egresos_qs.aggregate(
+            total=Sum(F('cantidad') * F('precio_costo_momento'))
+        )['total'] or 0
+
+        # Ingresos = Cuotas de comedor
+        ingresos_qs = Ingreso.objects.all()
+        if fecha_desde:
+            ingresos_qs = ingresos_qs.filter(fecha__gte=fecha_desde)
+        if fecha_hasta:
+            ingresos_qs = ingresos_qs.filter(fecha__lte=fecha_hasta)
+
+        total_ingresos = ingresos_qs.aggregate(total=Sum('monto'))['total'] or 0
+
+        # Ingresos por ventas del kiosco
+        ventas_qs = Venta.objects.all()
+        if fecha_desde:
+            ventas_qs = ventas_qs.filter(fecha__gte=fecha_desde)
+        if fecha_hasta:
+            ventas_qs = ventas_qs.filter(fecha__lte=fecha_hasta)
+
+        total_ventas = ventas_qs.aggregate(total=Sum('total'))['total'] or 0
+
+        balance = (total_ingresos + total_ventas) - total_egresos
+
+        return Response({
+            'total_egresos': float(total_egresos),
+            'total_ingresos_cuotas': float(total_ingresos),
+            'total_ventas_kiosco': float(total_ventas),
+            'total_ingresos': float(total_ingresos + total_ventas),
+            'balance': float(balance),
         })

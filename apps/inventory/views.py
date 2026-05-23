@@ -385,3 +385,27 @@ class StockViewSet(viewsets.ModelViewSet):
             queryset = queryset.filter(cantidad__gt=0)
         
         return queryset
+
+
+from rest_framework.views import APIView
+from rest_framework.permissions import IsAuthenticated
+from .serializers import PrecioHistoricoSerializer
+
+
+class PrecioHistoricoView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        producto_id = request.query_params.get('producto_id')
+        if not producto_id:
+            return Response({'error': 'Falta el parámetro producto_id.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        qs = PedidoItem.objects.filter(
+            producto_id=producto_id,
+            pedido__estado='recibido'
+        ).select_related(
+            'pedido__destino'
+        ).order_by('-pedido__fecha_creacion')[:20]
+
+        serializer = PrecioHistoricoSerializer(qs, many=True)
+        return Response(serializer.data)

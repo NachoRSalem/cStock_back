@@ -130,6 +130,12 @@ class Pedido(models.Model):
             self.estado = 'recibido'
             self.save()
 
+            # Actualizar el costo_compra de los productos con el precio de esta compra
+            for item in self.items.all():
+                if item.precio_costo_momento is not None:
+                    item.producto.costo_compra = item.precio_costo_momento
+                    item.producto.save(update_fields=['costo_compra'])
+
     def __str__(self):
         return f"Pedido {self.id} - {self.destino.nombre} ({self.get_estado_display()})"
 
