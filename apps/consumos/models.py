@@ -93,3 +93,57 @@ class ConsumoCocinaItem(models.Model):
 
     def __str__(self):
         return f"{self.cantidad} x {self.producto.nombre}"
+
+
+class ProduccionVianda(models.Model):
+    ubicacion = models.ForeignKey('locations.Ubicacion', on_delete=models.PROTECT, related_name='producciones_vianda')
+    sub_ubicacion_destino = models.ForeignKey(SubUbicacion, on_delete=models.PROTECT)
+    fecha = models.DateField()
+    registrado_por = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
+    creado_en = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-fecha', '-creado_en']
+        verbose_name = 'Producción de vianda'
+        verbose_name_plural = 'Producciones de vianda'
+
+    def __str__(self):
+        return f"Prod. vianda {self.id} - {self.ubicacion.nombre} ({self.fecha})"
+
+    def procesar_produccion(self, items_data):
+        with transaction.atomic():
+            for item in items_data:
+                producto = item['producto']
+                cantidad = item['cantidad']
+
+                if cantidad <= 0:
+                    raise ValueError(f"La cantidad debe ser mayor a 0 para {producto.nombre}.")
+
+                stock, _ = Stock.objects.get_or_create(
+                    producto=producto,
+                    sub_ubicacion=self.sub_ubicacion_destino,
+                    lote=None,
+                    defaults={'cantidad': Decimal('0')},
+                )
+                stock.cantidad = stock.cantidad + Decimal(str(cantidad))
+                stock.save(update_fields=['cantidad', 'ultima_actualizacion'])
+
+                ProduccionViandaItem.objects.create(
+                    produccion=self,
+                    producto=producto,
+                    cantidad=cantidad,
+                    precio_venta_momento=producto.precio_venta,
+                )
+
+
+class ProduccionViandaItem(models.Model):
+    produccion = models.ForeignKey(ProduccionVianda, on_delete=models.CASCADE, related_name='items')
+    producto = models.ForeignKey(Producto, on_delete=models.PROTECT)
+    cantidad = models.PositiveIntegerField()
+    precio_venta_momento = models.DecimalField(max_digits=10, decimal_places=2)
+
+    class Meta:
+        ordering = ['id']
+
+    def __str__(self):
+        return f"{self.cantidad} x {self.producto.nombre}"

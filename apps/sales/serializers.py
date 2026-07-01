@@ -44,5 +44,5 @@ class IngresoSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Ingreso
-        fields = ['id', 'monto', 'fecha', 'descripcion', 'tipo', 'registrado_por', 'registrado_por_nombre', 'creado_en']
+        fields = ['id', 'monto', 'fecha', 'descripcion', 'tipo', 'medio_pago', 'registrado_por', 'registrado_por_nombre', 'creado_en']
         read_only_fields = ['registrado_por', 'registrado_por_nombre', 'creado_en']

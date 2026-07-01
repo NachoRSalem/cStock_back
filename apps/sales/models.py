@@ -80,10 +80,17 @@ class Ingreso(models.Model):
         ('cuota_comedor', 'Cuota Comedor'),
     )
 
+    MEDIO_PAGO_CHOICES = (
+        ('mercado_pago', 'Mercado Pago'),
+        ('efectivo', 'Efectivo'),
+        ('cuenta_bancaria', 'Cuenta Bancaria'),
+    )
+
     monto = models.DecimalField(max_digits=12, decimal_places=2)
     fecha = models.DateField()
     descripcion = models.CharField(max_length=255, blank=True)
     tipo = models.CharField(max_length=30, choices=TIPO_CHOICES, default='cuota_comedor')
+    medio_pago = models.CharField(max_length=20, choices=MEDIO_PAGO_CHOICES, default='efectivo')
     registrado_por = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
     creado_en = models.DateTimeField(auto_now_add=True)
 
