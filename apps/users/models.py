@@ -6,7 +6,7 @@ class User(AbstractUser):
         ('admin', 'Administrador'),
         ('sucursal', 'Usuario de Sucursal'),
     )
-    
+
     rol = models.CharField(max_length=20, choices=ROLES, default='sucursal')
     sucursal_asignada = models.ForeignKey(
         'locations.Ubicacion',
@@ -16,6 +16,14 @@ class User(AbstractUser):
         related_name='usuarios',
         limit_choices_to={'tipo': 'sucursal'},
         verbose_name='Sucursal Asignada'
+    )
+    cuenta_pareada = models.OneToOneField(
+        'self',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='pareja_de',
+        verbose_name='Cuenta Pareada'
     )
 
     def __str__(self):

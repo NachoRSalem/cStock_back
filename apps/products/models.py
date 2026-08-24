@@ -24,9 +24,15 @@ class Producto(models.Model):
     )
     sku = models.CharField(max_length=50, unique=True, blank=True, null=True) # Código de barras si usás
     dias_caducidad = models.PositiveIntegerField(
-        null=True, 
+        null=True,
         blank=True,
         help_text="Días de caducidad desde la compra al distribuidor. Ej: 90 días = 3 meses"
+    )
+    unidad_medida = models.CharField(
+        max_length=20,
+        blank=True,
+        null=True,
+        help_text="Ej: kg, g, l, ml, unidad"
     )
 
     def __str__(self):
