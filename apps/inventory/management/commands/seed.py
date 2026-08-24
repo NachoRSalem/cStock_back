@@ -191,6 +191,16 @@ class Command(BaseCommand):
             users_map[sucursal_nombre] = u
             self.stdout.write(f"   -- {username} / {password}  -> {sucursal_nombre}")
 
+        # Parear cuentas Kiosco Campo y Comedor Campo para switch rápido
+        kiosco = users_map.get("Kiosco Campo")
+        comedor = users_map.get("Comedor Campo")
+        if kiosco and comedor:
+            kiosco.cuenta_pareada = comedor
+            kiosco.save()
+            comedor.cuenta_pareada = kiosco
+            comedor.save()
+            self.stdout.write(self.style.SUCCESS("   -- Cuentas pareadas: Kiosco Campo <-> Comedor Campo"))
+
         return users_map
 
     # ─────────────────────────────────────────────────────────────────────────
