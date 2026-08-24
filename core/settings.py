@@ -123,19 +123,32 @@ TEMPLATES = [
 WSGI_APPLICATION = 'core.wsgi.application'
 
 
-# Database
-# https://docs.djangoproject.com/en/6.0/ref/settings/#databases
+from urllib.parse import urlparse
 
-DATABASES = {
-    'default': {
-        'ENGINE': os.getenv('DB_ENGINE', 'django.db.backends.mysql'),
-        'NAME': os.getenv('DB_NAME') or os.getenv('MYSQLDATABASE') or os.getenv('MYSQL_DATABASE', 'stock_db'),
-        'USER': os.getenv('DB_USER') or os.getenv('MYSQLUSER', 'root'),
-        'PASSWORD': os.getenv('DB_PASSWORD') or os.getenv('MYSQLPASSWORD', ''),
-        'HOST': os.getenv('DB_HOST') or os.getenv('MYSQLHOST', 'localhost'),
-        'PORT': os.getenv('DB_PORT') or os.getenv('MYSQLPORT', '3306'),
+db_url = os.getenv('MYSQL_URL') or os.getenv('DATABASE_URL')
+if db_url:
+    parsed_db = urlparse(db_url)
+    DATABASES = {
+        'default': {
+            'ENGINE': os.getenv('DB_ENGINE', 'django.db.backends.mysql'),
+            'NAME': parsed_db.path.lstrip('/') or 'railway',
+            'USER': parsed_db.username or 'root',
+            'PASSWORD': parsed_db.password or '',
+            'HOST': parsed_db.hostname or '127.0.0.1',
+            'PORT': str(parsed_db.port or 3306),
+        }
     }
-}
+else:
+    DATABASES = {
+        'default': {
+            'ENGINE': os.getenv('DB_ENGINE', 'django.db.backends.mysql'),
+            'NAME': os.getenv('DB_NAME') or os.getenv('MYSQLDATABASE') or os.getenv('MYSQL_DATABASE', 'stock_db'),
+            'USER': os.getenv('DB_USER') or os.getenv('MYSQLUSER', 'root'),
+            'PASSWORD': os.getenv('DB_PASSWORD') or os.getenv('MYSQLPASSWORD', ''),
+            'HOST': os.getenv('DB_HOST') or os.getenv('MYSQLHOST', '127.0.0.1'),
+            'PORT': os.getenv('DB_PORT') or os.getenv('MYSQLPORT', '3306'),
+        }
+    }
 
 
 # Password validation
