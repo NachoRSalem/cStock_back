@@ -166,9 +166,7 @@ class ProduccionViandaViewSet(viewsets.ModelViewSet):
         if precio_venta <= 0:
             return Response({'error': 'El precio de venta debe ser mayor a 0.'}, status=status.HTTP_400_BAD_REQUEST)
 
-        categoria_vianda = Categoria.objects.filter(nombre__iexact='Vianda').first()
-        if not categoria_vianda:
-            return Response({'error': 'No existe la categoría "Vianda" en el sistema.'}, status=status.HTTP_400_BAD_REQUEST)
+        categoria_vianda, _ = Categoria.objects.get_or_create(nombre='Vianda')
 
         try:
             producto = Producto.objects.create(

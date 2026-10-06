@@ -4,12 +4,13 @@ from .models import ConsumoCocina, ConsumoCocinaItem, ProduccionVianda, Producci
 
 class ConsumoCocinaItemSerializer(serializers.ModelSerializer):
     producto_nombre = serializers.ReadOnlyField(source='producto.nombre')
+    producto_unidad_medida = serializers.ReadOnlyField(source='producto.unidad_medida')
     sub_ubicacion_origen_nombre = serializers.ReadOnlyField(source='sub_ubicacion_origen.nombre')
 
     class Meta:
         model = ConsumoCocinaItem
         fields = [
-            'id', 'producto', 'producto_nombre', 'cantidad',
+            'id', 'producto', 'producto_nombre', 'producto_unidad_medida', 'cantidad',
             'sub_ubicacion_origen', 'sub_ubicacion_origen_nombre',
             'costo_unitario_momento'
         ]
@@ -32,10 +33,11 @@ class ConsumoCocinaSerializer(serializers.ModelSerializer):
 
 class ProduccionViandaItemSerializer(serializers.ModelSerializer):
     producto_nombre = serializers.ReadOnlyField(source='producto.nombre')
+    producto_unidad_medida = serializers.ReadOnlyField(source='producto.unidad_medida')
 
     class Meta:
         model = ProduccionViandaItem
-        fields = ['id', 'producto', 'producto_nombre', 'cantidad', 'precio_venta_momento']
+        fields = ['id', 'producto', 'producto_nombre', 'producto_unidad_medida', 'cantidad', 'precio_venta_momento']
 
 
 class ProduccionViandaSerializer(serializers.ModelSerializer):

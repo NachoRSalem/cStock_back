@@ -30,8 +30,7 @@ class Producto(models.Model):
     )
     unidad_medida = models.CharField(
         max_length=20,
-        blank=True,
-        null=True,
+        default='unidad',
         help_text="Ej: kg, g, l, ml, unidad"
     )
 

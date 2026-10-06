@@ -99,3 +99,30 @@ class Ingreso(models.Model):
 
     def __str__(self):
         return f"Ingreso {self.tipo} - ${self.monto} ({self.fecha})"
+
+
+class GastoOperativo(models.Model):
+    CONCEPTO_CHOICES = (
+        ('luz', 'Luz / Electricidad'),
+        ('gas', 'Gas'),
+        ('agua', 'Agua'),
+        ('mantenimiento', 'Mantenimiento / Reparación'),
+        ('alquiler', 'Alquiler'),
+        ('internet', 'Internet / Servicios'),
+        ('impuestos', 'Impuestos / Tasas'),
+        ('otro', 'Otro Gasto Operativo'),
+    )
+
+    monto = models.DecimalField(max_digits=12, decimal_places=2)
+    fecha = models.DateField()
+    concepto = models.CharField(max_length=30, choices=CONCEPTO_CHOICES, default='otro')
+    descripcion = models.CharField(max_length=255, blank=True)
+    sucursal = models.ForeignKey(Ubicacion, on_delete=models.SET_NULL, null=True, blank=True, related_name='gastos_operativos', help_text="Sucursal asociada si aplica")
+    registrado_por = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
+    creado_en = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-fecha', '-creado_en']
+
+    def __str__(self):
+        return f"Gasto {self.get_concepto_display()} - ${self.monto} ({self.fecha})"

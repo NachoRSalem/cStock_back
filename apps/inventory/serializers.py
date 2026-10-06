@@ -5,6 +5,7 @@ from apps.locations.serializers import UbicacionSerializer
 class StockSerializer(serializers.ModelSerializer):
     cantidad = serializers.DecimalField(max_digits=12, decimal_places=3, coerce_to_string=False)
     producto_nombre = serializers.ReadOnlyField(source='producto.nombre')
+    producto_unidad_medida = serializers.ReadOnlyField(source='producto.unidad_medida')
     producto_tipo_conservacion = serializers.ReadOnlyField(source='producto.tipo_conservacion')
     producto_dias_caducidad = serializers.ReadOnlyField(source='producto.dias_caducidad')
     sub_ubicacion_nombre = serializers.ReadOnlyField(source='sub_ubicacion.nombre')
@@ -16,7 +17,7 @@ class StockSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = Stock
-        fields = ['id', 'producto', 'producto_nombre', 'producto_tipo_conservacion', 'producto_dias_caducidad',
+        fields = ['id', 'producto', 'producto_nombre', 'producto_unidad_medida', 'producto_tipo_conservacion', 'producto_dias_caducidad',
                   'sub_ubicacion', 'sub_ubicacion_nombre', 'sub_ubicacion_tipo',
                   'ubicacion_id', 'ubicacion_nombre', 'cantidad', 'ultima_actualizacion',
                   'fecha_ingreso', 'lote', 'fecha_vencimiento', 'dias_para_vencer']
@@ -25,10 +26,11 @@ class StockSerializer(serializers.ModelSerializer):
 class PedidoItemSerializer(serializers.ModelSerializer):
     
     producto_nombre = serializers.ReadOnlyField(source='producto.nombre')
+    producto_unidad_medida = serializers.ReadOnlyField(source='producto.unidad_medida')
 
     class Meta:
         model = PedidoItem
-        fields = ['id', 'producto', 'producto_nombre', 'cantidad', 'precio_costo_momento', 'sub_ubicacion_destino', 'sub_ubicacion_origen']
+        fields = ['id', 'producto', 'producto_nombre', 'producto_unidad_medida', 'cantidad', 'cantidad_recibida', 'precio_costo_momento', 'sub_ubicacion_destino', 'sub_ubicacion_origen']
 
 class PrecioHistoricoSerializer(serializers.ModelSerializer):
     fecha = serializers.ReadOnlyField(source='pedido.fecha_creacion')
@@ -51,7 +53,7 @@ class PedidoSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Pedido
-        fields = ['id', 'creado_por', 'destino', 'destino_nombre', 'estado', 'fecha_creacion', 'items', 'pdf_archivo', 'pdf_url', 'origen_tipo', 'origen_sucursal', 'origen_sucursal_nombre']
+        fields = ['id', 'creado_por', 'destino', 'destino_nombre', 'estado', 'fecha_creacion', 'items', 'pdf_archivo', 'pdf_url', 'origen_tipo', 'origen_sucursal', 'origen_sucursal_nombre', 'notas_recepcion']
         read_only_fields = ['creado_por', 'estado', 'pdf_archivo', 'pdf_url', 'origen_sucursal_nombre']
     
     def get_pdf_url(self, obj):

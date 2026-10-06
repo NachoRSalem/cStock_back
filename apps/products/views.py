@@ -37,10 +37,27 @@ class ProductoViewSet(viewsets.ModelViewSet):
         categoria = self.request.query_params.get('categoria')
         if categoria:
             queryset = queryset.filter(categoria_id=categoria)
-        # Búsqueda por nombre
+        # Búsqueda flexible por nombre, SKU o categoría
         search = self.request.query_params.get('search')
         if search:
-            queryset = queryset.filter(Q(nombre__icontains=search) | Q(sku__icontains=search))
+            search_str = search.strip()
+            # Término directo
+            q_filter = Q(nombre__icontains=search_str) | Q(sku__icontains=search_str) | Q(categoria__nombre__icontains=search_str)
+            
+            # Normalizar caracteres especiales (guiones, guiones bajos a espacio) y buscar por palabras
+            normalized_terms = search_str.replace('-', ' ').replace('_', ' ').split()
+            if len(normalized_terms) > 1:
+                term_q = Q()
+                for term in normalized_terms:
+                    term_q &= (Q(nombre__icontains=term) | Q(sku__icontains=term) | Q(categoria__nombre__icontains=term))
+                q_filter |= term_q
+
+            # Reemplazar espacios por guiones (ej: "coca cola" -> "coca-cola")
+            hyphenated = search_str.replace(' ', '-')
+            if hyphenated != search_str:
+                q_filter |= Q(nombre__icontains=hyphenated)
+
+            queryset = queryset.filter(q_filter)
 
         queryset = queryset.order_by('nombre')
 

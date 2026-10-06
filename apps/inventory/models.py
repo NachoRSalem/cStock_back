@@ -74,10 +74,11 @@ class Pedido(models.Model):
     # Origen del pedido
     origen_tipo = models.CharField(max_length=20, choices=TIPO_ORIGEN, default='distribuidor', help_text="Origen del stock para este pedido")
     origen_sucursal = models.ForeignKey(Ubicacion, on_delete=models.SET_NULL, null=True, blank=True, related_name='pedidos_origen', help_text="Sucursal/almacén de origen si origen_tipo='sucursal'")
+    notas_recepcion = models.TextField(null=True, blank=True, help_text="Observaciones o notas de discrepancia registradas durante la recepción")
 
     def marcar_como_recibido(self):
         """
-        Lógica para pasar de Aprobado a Recibido y sumar stock.
+        Lógica para pasar de Aprobado a Recibido y sumar stock basado en la cantidad recibida real.
         """
         if self.estado != 'aprobado':
             raise Exception("Solo se pueden recibir pedidos que estén en estado Aprobado.")
@@ -87,6 +88,11 @@ class Pedido(models.Model):
                 if not item.sub_ubicacion_destino:
                     raise Exception(f"El producto {item.producto.nombre} no tiene una sub-ubicación asignada.")
                 
+                # Usar la cantidad recibida real o la cantidad pedida por defecto
+                cant_real = Decimal(str(item.cantidad_recibida)) if item.cantidad_recibida is not None else Decimal(str(item.cantidad))
+                if cant_real <= 0:
+                    continue  # Si no llegó nada de este ítem, no incrementamos el stock
+
                 # Determinar si debemos crear un nuevo lote
                 producto = item.producto
                 
@@ -107,7 +113,7 @@ class Pedido(models.Model):
                         sub_ubicacion=item.sub_ubicacion_destino,
                         lote=nuevo_lote,
                         defaults={
-                            'cantidad': 0,
+                            'cantidad': Decimal('0'),
                             'fecha_ingreso': fecha_hoy
                         }
                     )
@@ -121,10 +127,10 @@ class Pedido(models.Model):
                         producto=producto,
                         sub_ubicacion=item.sub_ubicacion_destino,
                         lote=None,
-                        defaults={'cantidad': 0}
+                        defaults={'cantidad': Decimal('0')}
                     )
 
-                stock_existente.cantidad += item.cantidad
+                stock_existente.cantidad += cant_real
                 stock_existente.save()
 
             self.estado = 'recibido'
@@ -143,6 +149,7 @@ class PedidoItem(models.Model):
     pedido = models.ForeignKey(Pedido, on_delete=models.CASCADE, related_name='items')
     producto = models.ForeignKey(Producto, on_delete=models.CASCADE)
     cantidad = models.PositiveIntegerField()
+    cantidad_recibida = models.DecimalField(max_digits=12, decimal_places=3, null=True, blank=True, help_text="Cantidad real recibida")
     precio_costo_momento = models.DecimalField(max_digits=10, decimal_places=2)
     
     # se llena al momento de recibir

@@ -234,22 +234,38 @@ class PedidoViewSet(viewsets.ModelViewSet):
     def recibir(self, request, pk=None):
         """
         Endpoint: POST /api/inventory/pedidos/{id}/recibir/
+        Body: {
+            "notas_recepcion": "..." (opcional),
+            "items": [
+                {
+                    "id": 1,
+                    "sub_ubicacion_destino": 2,
+                    "cantidad_recibida": 5 (opcional)
+                }
+            ]
+        }
         """
         pedido = self.get_object()
         
         items_data = request.data.get('items', [])
+        notas_recepcion = request.data.get('notas_recepcion')
         
         try:
             for item_update in items_data:
                 try:
                     item = PedidoItem.objects.get(id=item_update['id'], pedido=pedido)
                     item.sub_ubicacion_destino_id = item_update['sub_ubicacion_destino']
+                    if 'cantidad_recibida' in item_update and item_update['cantidad_recibida'] is not None and item_update['cantidad_recibida'] != '':
+                        item.cantidad_recibida = item_update['cantidad_recibida']
                     item.save()
                 except PedidoItem.DoesNotExist:
                     return Response(
                         {'error': f"El item con id {item_update['id']} no pertenece al pedido {pedido.id}"},
                         status=status.HTTP_400_BAD_REQUEST
                     )
+            
+            if notas_recepcion is not None:
+                pedido.notas_recepcion = notas_recepcion
             
             pedido.marcar_como_recibido()
             return Response({'status': 'Pedido recibido y stock actualizado'}, status=status.HTTP_200_OK)

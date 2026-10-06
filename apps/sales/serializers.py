@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Venta, VentaItem, Ingreso
+from .models import Venta, VentaItem, Ingreso, GastoOperativo
 
 class VentaItemSerializer(serializers.ModelSerializer):
     producto_nombre = serializers.ReadOnlyField(source='producto.nombre')
@@ -45,4 +45,14 @@ class IngresoSerializer(serializers.ModelSerializer):
     class Meta:
         model = Ingreso
         fields = ['id', 'monto', 'fecha', 'descripcion', 'tipo', 'medio_pago', 'registrado_por', 'registrado_por_nombre', 'creado_en']
+        read_only_fields = ['registrado_por', 'registrado_por_nombre', 'creado_en']
+
+
+class GastoOperativoSerializer(serializers.ModelSerializer):
+    registrado_por_nombre = serializers.ReadOnlyField(source='registrado_por.username')
+    sucursal_nombre = serializers.ReadOnlyField(source='sucursal.nombre')
+
+    class Meta:
+        model = GastoOperativo
+        fields = ['id', 'monto', 'fecha', 'concepto', 'descripcion', 'sucursal', 'sucursal_nombre', 'registrado_por', 'registrado_por_nombre', 'creado_en']
         read_only_fields = ['registrado_por', 'registrado_por_nombre', 'creado_en']
