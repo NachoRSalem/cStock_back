@@ -15,6 +15,11 @@ class StockSerializer(serializers.ModelSerializer):
     fecha_vencimiento = serializers.ReadOnlyField()
     dias_para_vencer = serializers.ReadOnlyField()
     
+    def validate_producto(self, producto):
+        if producto.es_vianda:
+            raise serializers.ValidationError('Las viandas no manejan stock.')
+        return producto
+
     class Meta:
         model = Stock
         fields = ['id', 'producto', 'producto_nombre', 'producto_unidad_medida', 'producto_tipo_conservacion', 'producto_dias_caducidad',
@@ -27,6 +32,11 @@ class PedidoItemSerializer(serializers.ModelSerializer):
     
     producto_nombre = serializers.ReadOnlyField(source='producto.nombre')
     producto_unidad_medida = serializers.ReadOnlyField(source='producto.unidad_medida')
+
+    def validate_producto(self, producto):
+        if producto.es_vianda:
+            raise serializers.ValidationError('Las viandas no se piden: no manejan stock.')
+        return producto
 
     class Meta:
         model = PedidoItem
@@ -56,6 +66,24 @@ class PedidoSerializer(serializers.ModelSerializer):
         fields = ['id', 'creado_por', 'destino', 'destino_nombre', 'estado', 'fecha_creacion', 'items', 'pdf_archivo', 'pdf_url', 'origen_tipo', 'origen_sucursal', 'origen_sucursal_nombre', 'notas_recepcion']
         read_only_fields = ['creado_por', 'estado', 'pdf_archivo', 'pdf_url', 'origen_sucursal_nombre']
     
+    def _es_admin(self):
+        request = self.context.get('request')
+        return bool(request and request.user.is_authenticated and request.user.rol == 'admin')
+
+    def validate_destino(self, value):
+        request = self.context.get('request')
+        if request and not self._es_admin():
+            if value.id != request.user.sucursal_asignada_id:
+                raise serializers.ValidationError('Solo podés crear pedidos para tu propia sucursal.')
+        return value
+
+    def _forzar_costos(self, items_data):
+        """Solo el admin define el costo. Las sucursales usan el costo vigente del producto."""
+        if self._es_admin():
+            return
+        for item_data in items_data:
+            item_data['precio_costo_momento'] = item_data['producto'].costo_compra
+
     def get_pdf_url(self, obj):
         if obj.pdf_archivo:
             request = self.context.get('request')
@@ -66,6 +94,7 @@ class PedidoSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
        
         items_data = validated_data.pop('items')
+        self._forzar_costos(items_data)
         pedido = Pedido.objects.create(**validated_data)
         for item_data in items_data:
             PedidoItem.objects.create(pedido=pedido, **item_data)
@@ -82,6 +111,7 @@ class PedidoSerializer(serializers.ModelSerializer):
         
         # Si se enviaron items, reemplazar los existentes
         if items_data is not None:
+            self._forzar_costos(items_data)
             # Eliminar los items existentes
             instance.items.all().delete()
             

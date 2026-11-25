@@ -4,9 +4,12 @@ Uso: python manage.py seed
 """
 
 import random
+import secrets
 from decimal import Decimal
 from datetime import timedelta, date
 from django.core.management.base import BaseCommand
+from django.conf import settings
+from django.core.management.base import CommandError
 from django.contrib.auth import get_user_model
 from django.utils import timezone
 from django.db import transaction
@@ -18,6 +21,9 @@ class Command(BaseCommand):
     help = "Limpia la base de datos y la puebla con datos de prueba realistas."
 
     def handle(self, *args, **options):
+        if not settings.DEBUG:
+            raise CommandError("seed borra toda la base de datos y solo puede ejecutarse con DEBUG=True.")
+        self._passwords = []
         self.stdout.write("Limpiando datos existentes...")
         self._clear_data()
 
@@ -157,15 +163,17 @@ class Command(BaseCommand):
     # ─────────────────────────────────────────────────────────────────────────
 
     def _create_users(self, ubicaciones):
+        admin_password = secrets.token_urlsafe(12)
+        self._passwords.append(("admin", "admin", admin_password))
         admin = User.objects.create_superuser(
             username="admin",
-            password="admin1234",
+            password=admin_password,
             email="admin@eldique.com",
             first_name="Administrador",
             last_name="Sistema",
             rol="admin",
         )
-        self.stdout.write(f"   -- admin / admin1234  (rol: admin)")
+        self.stdout.write("   -- admin creado (rol: admin)")
 
         users_map = {"admin": admin}
 
@@ -178,7 +186,8 @@ class Command(BaseCommand):
         ]
 
         for username, sucursal_nombre in sucursal_users:
-            password = f"{username}1234"
+            password = secrets.token_urlsafe(12)
+            self._passwords.append(("sucursal", username, password))
             ub = ubicaciones[sucursal_nombre]
             u = User.objects.create_user(
                 username=username,
@@ -189,7 +198,7 @@ class Command(BaseCommand):
                 sucursal_asignada=ub,
             )
             users_map[sucursal_nombre] = u
-            self.stdout.write(f"   -- {username} / {password}  -> {sucursal_nombre}")
+            self.stdout.write(f"   -- {username} creado -> {sucursal_nombre}")
 
         # Parear cuentas Kiosco Campo y Comedor Campo para switch rápido
         kiosco = users_map.get("Kiosco Campo")
@@ -530,14 +539,7 @@ class Command(BaseCommand):
         self.stdout.write("-" * 40)
         self.stdout.write(f"  {'ROL':<14} {'USERNAME':<22} {'PASSWORD'}")
         self.stdout.write("-" * 40)
-        rows = [
-            ("admin",         "admin",                  "admin1234"),
-            ("sucursal",      "KioscoCampo",            "KioscoCampo1234"),
-            ("sucursal",      "KioscoCentro",           "KioscoCentro1234"),
-            ("sucursal",      "ComedorCampo",           "ComedorCampo1234"),
-            ("sucursal",      "ColegioComedorCentro",   "ColegioComedorCentro1234"),
-            ("sucursal",      "Hidrocinetic",           "Hidrocinetic1234"),
-        ]
+        rows = self._passwords
         for rol, user, pwd in rows:
             self.stdout.write(f"  {rol:<14} {user:<22} {pwd}")
         self.stdout.write("-" * 40)

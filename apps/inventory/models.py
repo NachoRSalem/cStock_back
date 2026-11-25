@@ -138,7 +138,8 @@ class Pedido(models.Model):
 
             # Actualizar el costo_compra de los productos con el precio de esta compra
             for item in self.items.all():
-                if item.precio_costo_momento is not None:
+                # Solo las compras a distribuidor actualizan el costo; los traslados entre sucursales no.
+                if item.precio_costo_momento is not None and item.es_de_distribuidor:
                     item.producto.costo_compra = item.precio_costo_momento
                     item.producto.save(update_fields=['costo_compra'])
 

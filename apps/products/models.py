@@ -1,5 +1,7 @@
 from django.db import models
 
+from .units import UNIDAD_CHOICES
+
 class Categoria(models.Model):
     nombre = models.CharField(max_length=100) # Ej: Bebidas, Lácteos, Golosinas
 
@@ -32,6 +34,20 @@ class Producto(models.Model):
         max_length=20,
         default='unidad',
         help_text="Ej: kg, g, l, ml, unidad"
+    )
+    # Datos del envase de compra. costo_compra se calcula a partir de ellos (precio normalizado).
+    cantidad_envase = models.DecimalField(
+        max_digits=12, decimal_places=3, null=True, blank=True,
+        help_text="Cantidad que trae un envase, expresada en unidad_envase"
+    )
+    unidad_envase = models.CharField(max_length=10, choices=UNIDAD_CHOICES, null=True, blank=True)
+    precio_envase = models.DecimalField(
+        max_digits=12, decimal_places=2, null=True, blank=True,
+        help_text="Precio final pagado por un envase"
+    )
+    es_vianda = models.BooleanField(
+        default=False,
+        help_text="Las viandas no manejan stock ni costo de compra: solo se vende con su precio de venta"
     )
 
     def __str__(self):

@@ -1,3 +1,5 @@
+from rest_framework import serializers
+from django.contrib.auth import get_user_model
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 
 class MyTokenObtainPairSerializer(TokenObtainPairSerializer):
@@ -22,3 +24,12 @@ class MyTokenObtainPairSerializer(TokenObtainPairSerializer):
         data['username'] = self.user.username
         data['cuenta_pareada'] = self.user.cuenta_pareada.username if self.user.cuenta_pareada else None
         return data
+
+
+class UserListSerializer(serializers.ModelSerializer):
+    sucursal_nombre = serializers.ReadOnlyField(source='sucursal_asignada.nombre')
+    cuenta_pareada_username = serializers.ReadOnlyField(source='cuenta_pareada.username')
+
+    class Meta:
+        model = get_user_model()
+        fields = ['id', 'username', 'rol', 'is_active', 'sucursal_asignada', 'sucursal_nombre', 'cuenta_pareada_username']

@@ -1,3 +1,4 @@
+from decimal import Decimal
 from django.db import models
 from django.conf import settings
 from django.db import transaction
@@ -11,14 +12,92 @@ class Venta(models.Model):
     fecha = models.DateTimeField(auto_now_add=True)
     total = models.DecimalField(max_digits=12, decimal_places=2, default=0)
 
+    ESTADO_COMPLETADA = 'completada'
+    ESTADO_ANULADA = 'anulada'
+    ESTADOS = (
+        (ESTADO_COMPLETADA, 'Completada'),
+        (ESTADO_ANULADA, 'Anulada'),
+    )
+    estado = models.CharField(max_length=20, choices=ESTADOS, default=ESTADO_COMPLETADA)
+    anulada_en = models.DateTimeField(null=True, blank=True)
+    anulada_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name='ventas_anuladas',
+    )
+
+    def anular(self, usuario):
+        """
+        Anula la venta: devuelve el stock a los lotes de los que salió y deja de
+        contarla en los totales de dinero (los reportes solo suman ventas completadas).
+        """
+        from django.utils import timezone
+
+        with transaction.atomic():
+            venta = Venta.objects.select_for_update().get(pk=self.pk)
+            if venta.estado == self.ESTADO_ANULADA:
+                raise ValueError('La venta ya fue anulada.')
+
+            for item in venta.items.select_related('producto', 'sub_ubicacion_origen'):
+                # Las viandas no usan stock: anularlas solo descuenta el dinero.
+                if item.producto.es_vianda or item.sub_ubicacion_origen_id is None:
+                    continue
+                devuelto = Decimal('0')
+                for consumo in item.lotes.select_related('stock'):
+                    if consumo.stock_id is None:
+                        continue
+                    stock = Stock.objects.select_for_update().get(pk=consumo.stock_id)
+                    stock.cantidad += consumo.cantidad
+                    stock.save()
+                    devuelto += consumo.cantidad
+
+                # Ventas anteriores a este registro de lotes (o lotes borrados): se devuelve al stock sin lote.
+                restante = Decimal(item.cantidad) - devuelto
+                if restante > 0:
+                    stock, _ = Stock.objects.select_for_update().get_or_create(
+                        producto=item.producto,
+                        sub_ubicacion=item.sub_ubicacion_origen,
+                        lote=None,
+                        defaults={'cantidad': Decimal('0')},
+                    )
+                    stock.cantidad += restante
+                    stock.save()
+
+            venta.estado = self.ESTADO_ANULADA
+            venta.anulada_en = timezone.now()
+            venta.anulada_por = usuario
+            venta.save(update_fields=['estado', 'anulada_en', 'anulada_por'])
+
+        self.estado = venta.estado
+        self.anulada_en = venta.anulada_en
+        self.anulada_por = venta.anulada_por
+
     def procesar_venta(self, items_data):
         """
         Lógica atómica: registra items y descuenta stock.
         items_data: lista de diccionarios con producto, sub_ubicacion, cantidad y precio.
         """
         with transaction.atomic():
-            total_venta = 0
+            total_venta = Decimal('0')
             for item in items_data:
+                # El precio lo define el servidor, nunca el cliente.
+                item['precio_venta_momento'] = item['producto'].precio_venta
+                consumos = []
+
+                if item['producto'].es_vianda:
+                    # Vianda: no hay stock que descontar, solo entra el dinero de la venta.
+                    VentaItem.objects.create(
+                        venta=self,
+                        producto=item['producto'],
+                        sub_ubicacion_origen=None,
+                        cantidad=item['cantidad'],
+                        precio_venta_momento=item['precio_venta_momento'],
+                    )
+                    total_venta += item['cantidad'] * item['precio_venta_momento']
+                    continue
+
                 # 1. Validar y descontar Stock usando FIFO (First In, First Out)
                 # Obtener todos los lotes del producto en esta sub-ubicación
                 stocks_disponibles = Stock.objects.select_for_update().filter(
@@ -44,17 +123,22 @@ class Venta(models.Model):
                     cantidad_a_descontar = min(stock_actual.cantidad, cantidad_restante)
                     stock_actual.cantidad -= cantidad_a_descontar
                     stock_actual.save()
-                    
+                    consumos.append((stock_actual, cantidad_a_descontar))
+
                     cantidad_restante -= cantidad_a_descontar
 
-                # 2. Crear el item de venta
-                VentaItem.objects.create(
+                # 2. Crear el item de venta y registrar de qué lotes salió el stock
+                venta_item = VentaItem.objects.create(
                     venta=self,
                     producto=item['producto'],
                     sub_ubicacion_origen=item['sub_ubicacion_origen'],
                     cantidad=item['cantidad'],
                     precio_venta_momento=item['precio_venta_momento']
                 )
+                for stock_usado, cantidad_usada in consumos:
+                    VentaItemLote.objects.create(
+                        venta_item=venta_item, stock=stock_usado, cantidad=cantidad_usada
+                    )
                 total_venta += (item['cantidad'] * item['precio_venta_momento'])
 
             # 3. Actualizar el total de la venta
@@ -67,12 +151,20 @@ class Venta(models.Model):
 class VentaItem(models.Model):
     venta = models.ForeignKey(Venta, on_delete=models.CASCADE, related_name='items')
     producto = models.ForeignKey(Producto, on_delete=models.CASCADE)
-    sub_ubicacion_origen = models.ForeignKey(SubUbicacion, on_delete=models.PROTECT)
+    # Null en las viandas, que no salen de ninguna sub-ubicación.
+    sub_ubicacion_origen = models.ForeignKey(SubUbicacion, on_delete=models.PROTECT, null=True, blank=True)
     cantidad = models.PositiveIntegerField()
     precio_venta_momento = models.DecimalField(max_digits=10, decimal_places=2)
 
     def __str__(self):
         return f"{self.cantidad} x {self.producto.nombre}"
+
+
+class VentaItemLote(models.Model):
+    """De qué registro de stock (lote) salió cada unidad vendida; sirve para devolverlo al anular."""
+    venta_item = models.ForeignKey(VentaItem, on_delete=models.CASCADE, related_name='lotes')
+    stock = models.ForeignKey(Stock, on_delete=models.SET_NULL, null=True, related_name='+')
+    cantidad = models.DecimalField(max_digits=12, decimal_places=3)
 
 
 class Ingreso(models.Model):
@@ -110,6 +202,7 @@ class GastoOperativo(models.Model):
         ('alquiler', 'Alquiler'),
         ('internet', 'Internet / Servicios'),
         ('impuestos', 'Impuestos / Tasas'),
+        ('sueldos', 'Sueldos y Honorarios'),
         ('otro', 'Otro Gasto Operativo'),
     )
 

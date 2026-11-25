@@ -31,6 +31,23 @@ class PedidoViewSet(viewsets.ModelViewSet):
             # Sucursal: queda en borrador para enviar a revisión
             serializer.save(creado_por=user, estado='borrador')
 
+    def update(self, request, *args, **kwargs):
+        pedido = self.get_object()
+        if pedido.estado != 'borrador':
+            return Response({'error': 'Solo se pueden editar pedidos en borrador.'},
+                            status=status.HTTP_400_BAD_REQUEST)
+        return super().update(request, *args, **kwargs)
+
+    def destroy(self, request, *args, **kwargs):
+        pedido = self.get_object()
+        estados_permitidos = ['borrador']
+        if request.user.rol == 'admin':
+            estados_permitidos += ['pendiente', 'rechazado']
+        if pedido.estado not in estados_permitidos:
+            return Response({'error': f'No se puede eliminar un pedido en estado {pedido.get_estado_display()}.'},
+                            status=status.HTTP_400_BAD_REQUEST)
+        return super().destroy(request, *args, **kwargs)
+
     @action(detail=True, methods=['post'])
     def enviar_a_revision(self, request, pk=None):
         """Pasa el pedido de Borrador a Pendiente de Aprobación."""

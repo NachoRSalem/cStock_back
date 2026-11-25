@@ -25,6 +25,9 @@ class RecetaSerializer(serializers.ModelSerializer):
         read_only_fields = ['creado_en', 'actualizado_en']
 
     def validate_insumos(self, value):
+        for item in value or []:
+            if item['producto_insumo'].es_vianda:
+                raise serializers.ValidationError('Una vianda no puede ser insumo de una receta.')
         if not value:
             raise serializers.ValidationError('La receta debe tener al menos un insumo.')
         for item in value:

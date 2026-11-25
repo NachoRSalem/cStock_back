@@ -1,5 +1,5 @@
 from rest_framework import viewsets
-from rest_framework.permissions import IsAuthenticatedOrReadOnly
+from rest_framework.permissions import IsAuthenticated
 from django.db.models import Q
 from apps.users.permissions import IsAdminUser
 from .models import Producto, Categoria
@@ -16,7 +16,7 @@ class ProductoViewSet(viewsets.ModelViewSet):
     
     def get_permissions(self):
         if self.action in ['list', 'retrieve']:
-            return [IsAuthenticatedOrReadOnly()]
+            return [IsAuthenticated()]
         return [IsAdminUser()]
     
     def get_queryset(self):
@@ -28,6 +28,13 @@ class ProductoViewSet(viewsets.ModelViewSet):
                 queryset = queryset.filter(es_fabricable=True)
             elif es_fabricable.lower() in ['false', '0', 'no']:
                 queryset = queryset.filter(es_fabricable=False)
+
+        es_vianda = self.request.query_params.get('es_vianda')
+        if es_vianda is not None:
+            if es_vianda.lower() in ['true', '1', 'yes']:
+                queryset = queryset.filter(es_vianda=True)
+            elif es_vianda.lower() in ['false', '0', 'no']:
+                queryset = queryset.filter(es_vianda=False)
 
         # Filtro opcional por tipo de conservación
         tipo = self.request.query_params.get('tipo_conservacion')
@@ -79,5 +86,5 @@ class CategoriaViewSet(viewsets.ModelViewSet):
     
     def get_permissions(self):
         if self.action in ['list', 'retrieve']:
-            return [IsAuthenticatedOrReadOnly()]
+            return [IsAuthenticated()]
         return [IsAdminUser()]

@@ -4,9 +4,19 @@ from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.auth import get_user_model
-from .serializers import MyTokenObtainPairSerializer
+from apps.users.permissions import IsAdminUser
+from .serializers import MyTokenObtainPairSerializer, UserListSerializer
 
 User = get_user_model()
+
+
+class UserListView(APIView):
+    """Lista de usuarios (solo admin). Nunca expone contraseñas."""
+    permission_classes = [IsAdminUser]
+
+    def get(self, request):
+        qs = User.objects.select_related('sucursal_asignada', 'cuenta_pareada').order_by('rol', 'username')
+        return Response(UserListSerializer(qs, many=True).data)
 
 
 class SwitchAccountView(APIView):

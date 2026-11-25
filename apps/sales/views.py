@@ -1,4 +1,5 @@
-from rest_framework import viewsets
+from rest_framework import viewsets, status
+from rest_framework.decorators import action
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.pagination import PageNumberPagination
@@ -94,7 +95,7 @@ class BalanceView(APIView):
         total_ingresos_cuotas = ingresos_qs.aggregate(total=Sum('monto'))['total'] or 0
 
         # Ingresos por ventas del kiosco
-        ventas_qs = Venta.objects.all()
+        ventas_qs = Venta.objects.filter(estado=Venta.ESTADO_COMPLETADA)
         if fecha_desde:
             ventas_qs = ventas_qs.filter(fecha__gte=fecha_desde)
         if fecha_hasta:
@@ -129,9 +130,16 @@ class VentaViewSet(viewsets.ModelViewSet):
     queryset = Venta.objects.all()
     serializer_class = VentaSerializer
     pagination_class = VentaPagination
+    # Las ventas no se editan ni se borran: si hubo un error se anulan (con devolución de stock).
+    http_method_names = ['get', 'post', 'head', 'options']
 
     def get_queryset(self):
-        qs = Venta.objects.select_related('sucursal', 'vendedor').prefetch_related('items__producto').order_by('-fecha')
+        qs = Venta.objects.select_related('sucursal', 'vendedor', 'anulada_por').prefetch_related('items__producto').order_by('-fecha')
+        user = self.request.user
+        if user.rol != 'admin':
+            if not user.sucursal_asignada_id:
+                return qs.none()
+            return qs.filter(sucursal_id=user.sucursal_asignada_id)
         sucursal_id = self.request.query_params.get('sucursal')
         if sucursal_id:
             qs = qs.filter(sucursal_id=sucursal_id)
@@ -139,6 +147,18 @@ class VentaViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         serializer.save(vendedor=self.request.user)
+
+    @action(detail=True, methods=['post'])
+    def anular(self, request, pk=None):
+        """
+        Anula la venta: devuelve el stock a su lugar y la venta deja de sumar en los totales de dinero.
+        """
+        venta = self.get_object()
+        try:
+            venta.anular(request.user)
+        except ValueError as e:
+            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(self.get_serializer(venta).data)
 
 class ReporteEconomicoView(APIView):
     permission_classes = [IsAdminUser]
@@ -173,7 +193,7 @@ class ReporteEconomicoView(APIView):
                 total=Sum(F('cantidad') * F('precio_costo_momento'))
             )['total'] or 0
 
-            ventas_qs = Venta.objects.filter(sucursal=suc)
+            ventas_qs = Venta.objects.filter(sucursal=suc, estado=Venta.ESTADO_COMPLETADA)
             if fecha_desde:
                 ventas_qs = ventas_qs.filter(fecha__gte=fecha_desde)
             if fecha_hasta:
@@ -320,7 +340,7 @@ class DashboardView(APIView):
         expiring_30 = len([x for x in productos_proximos_vencer if x['dias_restantes'] <= 30])
 
         # --- VENTAS QUERIES ---
-        ventas_qs = Venta.objects.all()
+        ventas_qs = Venta.objects.filter(estado=Venta.ESTADO_COMPLETADA)
         if sucursal_id:
             ventas_qs = ventas_qs.filter(sucursal_id=sucursal_id)
         if fecha_desde:
