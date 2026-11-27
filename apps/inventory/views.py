@@ -3,6 +3,7 @@ from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from django.db import transaction
+from django.db.models import Prefetch
 
 from apps.users.permissions import IsAdminUser
 from .models import PedidoItem, Stock
@@ -18,9 +19,37 @@ class PedidoViewSet(viewsets.ModelViewSet):
         user = self.request.user
         
         if user.is_superuser or user.rol == 'admin':
-            return Pedido.objects.all()
-        
-        return Pedido.objects.filter(destino=user.sucursal_asignada)
+            qs = Pedido.objects.all()
+        else:
+            qs = Pedido.objects.filter(destino=user.sucursal_asignada)
+
+        # Solo para lectura: trae todo junto en pocas consultas. En las acciones que
+        # modifican items no se precarga, para no trabajar con datos viejos.
+        if self.action in ('list', 'retrieve'):
+            items = PedidoItem.objects.select_related('producto').order_by('id')
+            qs = qs.select_related('destino', 'origen_sucursal').prefetch_related(
+                Prefetch('items', queryset=items)
+            )
+        return qs.order_by('id')
+
+    @staticmethod
+    def _bloquear(pedido):
+        """
+        Relee el pedido bloqueando la fila (dentro de una transacción), para que dos
+        peticiones simultáneas (p. ej. doble clic) no lo procesen dos veces.
+        """
+        return Pedido.objects.select_for_update().get(pk=pedido.pk)
+
+    @action(detail=False, methods=['get'])
+    def contador(self, request):
+        """
+        Cantidad para el aviso del menú: el admin ve los pedidos por revisar y la
+        sucursal los aprobados que tiene por recibir.
+        """
+        user = request.user
+        es_admin = user.is_superuser or user.rol == 'admin'
+        estado = 'pendiente' if es_admin else 'aprobado'
+        return Response({'cantidad': self.get_queryset().filter(estado=estado).count()})
 
     def perform_create(self, serializer):
         user = self.request.user
@@ -52,12 +81,14 @@ class PedidoViewSet(viewsets.ModelViewSet):
     def enviar_a_revision(self, request, pk=None):
         """Pasa el pedido de Borrador a Pendiente de Aprobación."""
         pedido = self.get_object()
-        if pedido.estado != 'borrador':
-            return Response({'error': 'Solo pedidos en borrador pueden enviarse a revisión.'}, 
-                            status=status.HTTP_400_BAD_REQUEST)
-        
-        pedido.estado = 'pendiente'
-        pedido.save()
+        with transaction.atomic():
+            pedido = self._bloquear(pedido)
+            if pedido.estado != 'borrador':
+                return Response({'error': 'Solo pedidos en borrador pueden enviarse a revisión.'},
+                                status=status.HTTP_400_BAD_REQUEST)
+
+            pedido.estado = 'pendiente'
+            pedido.save()
         return Response({'status': 'Pedido enviado a revisión del administrador.'})
 
     @action(detail=True, methods=['post'], permission_classes=[IsAdminUser])
@@ -97,6 +128,10 @@ class PedidoViewSet(viewsets.ModelViewSet):
 
         try:
             with transaction.atomic():
+                pedido = self._bloquear(pedido)
+                if pedido.estado != 'pendiente':
+                    raise Exception('Solo pedidos pendientes pueden ser aprobados.')
+
                 # Contadores para determinar el origen_tipo del pedido
                 items_distribuidor = []
                 items_sucursal = []
@@ -136,13 +171,14 @@ class PedidoViewSet(viewsets.ModelViewSet):
 
                                 # Obtener todos los lotes del producto en esta sub-ubicación
                                 # Ordenar por fecha_ingreso (FIFO) - los sin fecha van al final
-                                stocks_disponibles = Stock.objects.filter(
+                                # La lista se arma una sola vez, con las filas bloqueadas.
+                                stocks_disponibles = list(Stock.objects.select_for_update().filter(
                                     producto=item.producto,
                                     sub_ubicacion_id=sub_ubicacion_id,
                                     cantidad__gt=0
-                                ).order_by('fecha_ingreso', 'id')
+                                ).order_by('fecha_ingreso', 'id'))
 
-                                if not stocks_disponibles.exists():
+                                if not stocks_disponibles:
                                     raise Exception(f"No hay stock de {item.producto.nombre} en la sub-ubicación especificada de la sucursal origen.")
 
                                 # Verificar que hay stock suficiente en total
@@ -165,7 +201,7 @@ class PedidoViewSet(viewsets.ModelViewSet):
                                 # Guardar detalle
                                 detalles_origen.append({
                                     'sub_ubicacion_id': sub_ubicacion_id,
-                                    'sub_ubicacion_nombre': stocks_disponibles.first().sub_ubicacion.nombre,
+                                    'sub_ubicacion_nombre': stocks_disponibles[0].sub_ubicacion.nombre,
                                     'cantidad': cantidad_a_tomar
                                 })
 
@@ -239,12 +275,14 @@ class PedidoViewSet(viewsets.ModelViewSet):
     def rechazar(self, request, pk=None):
         """El Admin rechaza el pedido pendiente."""
         pedido = self.get_object()
-        if pedido.estado != 'pendiente':
-            return Response({'error': 'Solo pedidos pendientes pueden ser rechazados.'}, 
-                            status=status.HTTP_400_BAD_REQUEST)
-        
-        pedido.estado = 'rechazado'
-        pedido.save()
+        with transaction.atomic():
+            pedido = self._bloquear(pedido)
+            if pedido.estado != 'pendiente':
+                return Response({'error': 'Solo pedidos pendientes pueden ser rechazados.'},
+                                status=status.HTTP_400_BAD_REQUEST)
+
+            pedido.estado = 'rechazado'
+            pedido.save()
         return Response({'status': 'Pedido rechazado.'})
 
     @action(detail=True, methods=['post'])
@@ -268,23 +306,25 @@ class PedidoViewSet(viewsets.ModelViewSet):
         notas_recepcion = request.data.get('notas_recepcion')
         
         try:
-            for item_update in items_data:
-                try:
-                    item = PedidoItem.objects.get(id=item_update['id'], pedido=pedido)
+            with transaction.atomic():
+                pedido = self._bloquear(pedido)
+                if pedido.estado != 'aprobado':
+                    raise Exception("Solo se pueden recibir pedidos que estén en estado Aprobado.")
+
+                for item_update in items_data:
+                    try:
+                        item = PedidoItem.objects.get(id=item_update['id'], pedido=pedido)
+                    except PedidoItem.DoesNotExist:
+                        raise Exception(f"El item con id {item_update['id']} no pertenece al pedido {pedido.id}")
                     item.sub_ubicacion_destino_id = item_update['sub_ubicacion_destino']
                     if 'cantidad_recibida' in item_update and item_update['cantidad_recibida'] is not None and item_update['cantidad_recibida'] != '':
                         item.cantidad_recibida = item_update['cantidad_recibida']
                     item.save()
-                except PedidoItem.DoesNotExist:
-                    return Response(
-                        {'error': f"El item con id {item_update['id']} no pertenece al pedido {pedido.id}"},
-                        status=status.HTTP_400_BAD_REQUEST
-                    )
-            
-            if notas_recepcion is not None:
-                pedido.notas_recepcion = notas_recepcion
-            
-            pedido.marcar_como_recibido()
+
+                if notas_recepcion is not None:
+                    pedido.notas_recepcion = notas_recepcion
+
+                pedido.marcar_como_recibido()
             return Response({'status': 'Pedido recibido y stock actualizado'}, status=status.HTTP_200_OK)
         except Exception as e:
             return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)

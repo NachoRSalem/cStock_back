@@ -108,7 +108,7 @@ class Pedido(models.Model):
                     nuevo_lote = f"LOTE-{timestamp}-{random_suffix}"
                     
                     # Crear o actualizar el stock con el nuevo lote
-                    stock_existente, created = Stock.objects.get_or_create(
+                    stock_existente, created = Stock.objects.select_for_update().get_or_create(
                         producto=producto,
                         sub_ubicacion=item.sub_ubicacion_destino,
                         lote=nuevo_lote,
@@ -123,7 +123,7 @@ class Pedido(models.Model):
                     
                 else:
                     # Productos sin caducidad: consolidar en un único registro
-                    stock_existente, created = Stock.objects.get_or_create(
+                    stock_existente, created = Stock.objects.select_for_update().get_or_create(
                         producto=producto,
                         sub_ubicacion=item.sub_ubicacion_destino,
                         lote=None,

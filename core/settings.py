@@ -79,6 +79,8 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    # Si la base está dormida (Railway Serverless), espera a que despierte en vez de dar error.
+    'core.db_wait.EsperarBaseDeDatosMiddleware',
 ]
 
 CORS_ALLOW_ALL_ORIGINS = True
@@ -163,6 +165,10 @@ else:
             'PORT': os.getenv('DB_PORT') or os.getenv('MYSQLPORT', '3306'),
         }
     }
+
+# Tiempo máximo de cada intento de conexión (los reintentos los hace core.db_wait).
+if 'mysql' in DATABASES['default']['ENGINE']:
+    DATABASES['default'].setdefault('OPTIONS', {})['connect_timeout'] = 5
 
 
 # Password validation

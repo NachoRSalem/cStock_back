@@ -242,51 +242,54 @@ class DashboardView(APIView):
         if sucursal_id:
             stock_qs = stock_qs.filter(sub_ubicacion__ubicacion_id=sucursal_id)
 
+        # El stock se lee una sola vez y se agrupa en memoria (evita una consulta por lugar y producto).
+        stocks = list(stock_qs)
+        stocks_por_sub = defaultdict(list)
+        stocks_por_ubicacion = defaultdict(list)
+        stocks_por_producto = defaultdict(list)
+        for s in stocks:
+            stocks_por_sub[s.sub_ubicacion_id].append(s)
+            stocks_por_ubicacion[s.sub_ubicacion.ubicacion_id].append(s)
+            stocks_por_producto[s.producto_id].append(s)
+
+        def valor_de(lista):
+            return sum(float(s.cantidad) * float(s.producto.precio_venta) for s in lista)
+
         # Stock total por ubicación
         stock_por_ubicacion = []
-        ubicaciones = Ubicacion.objects.all()
+        ubicaciones = Ubicacion.objects.prefetch_related('sub_ubicaciones')
         if sucursal_id:
             ubicaciones = ubicaciones.filter(id=sucursal_id)
 
         for ub in ubicaciones:
-            subs = ub.sub_ubicaciones.all()
-            for sub in subs:
-                stocks_en_sub = stock_qs.filter(sub_ubicacion=sub)
-                productos_count = stocks_en_sub.count()
-                valor_total = sum(
-                    float(s.cantidad) * float(s.producto.precio_venta)
-                    for s in stocks_en_sub
-                )
-                if productos_count > 0:
+            for sub in ub.sub_ubicaciones.all():
+                stocks_en_sub = stocks_por_sub.get(sub.id, [])
+                if stocks_en_sub:
                     stock_por_ubicacion.append({
                         'sucursal': ub.nombre,
                         'sucursal_id': ub.id,
                         'sub_ubicacion': sub.nombre,
                         'sub_ubicacion_id': sub.id,
                         'tipo': sub.tipo,
-                        'productos_count': productos_count,
-                        'valor_total': round(valor_total, 2)
+                        'productos_count': len(stocks_en_sub),
+                        'valor_total': round(valor_de(stocks_en_sub), 2)
                     })
 
         # KPIs de stock
-        total_stock_value = sum(
-            float(s.cantidad) * float(s.producto.precio_venta)
-            for s in stock_qs
-        )
-        stock_items_count = stock_qs.count()
+        total_stock_value = valor_de(stocks)
+        stock_items_count = len(stocks)
 
         # Stock bajo
         stock_bajo_data = []
-        productos_con_stock = stock_qs.values('producto').annotate(
-            total_cantidad=Sum('cantidad')
-        ).filter(total_cantidad__lt=stock_minimo)
+        productos_bajo_ids = sorted(
+            producto_id for producto_id, lista in stocks_por_producto.items()
+            if sum(s.cantidad for s in lista) < stock_minimo
+        )
 
-        productos_bajo_ids = [p['producto'] for p in productos_con_stock]
-        productos_bajo = Producto.objects.filter(id__in=productos_bajo_ids).select_related('categoria')
-
-        for prod in productos_bajo:
-            stock_items = stock_qs.filter(producto=prod)
-            total_cant = sum(float(s.cantidad) for s in stock_items)
+        for producto_id in productos_bajo_ids:
+            lista = stocks_por_producto[producto_id]
+            prod = lista[0].producto
+            total_cant = sum(float(s.cantidad) for s in lista)
             stock_bajo_data.append({
                 'producto_id': prod.id,
                 'producto_nombre': prod.nombre,
@@ -298,7 +301,7 @@ class DashboardView(APIView):
         # Productos próximos a vencer
         productos_proximos_vencer = []
         seen = set()
-        for s in stock_qs:
+        for s in stocks:
             fv = s.fecha_vencimiento
             if fv is None:
                 continue
@@ -348,8 +351,11 @@ class DashboardView(APIView):
         if fecha_hasta:
             ventas_qs = ventas_qs.filter(fecha__lte=fecha_hasta)
 
-        total_ventas_periodo = float(ventas_qs.aggregate(total=Coalesce(Sum('total'), Decimal('0')))['total'] or 0)
-        cantidad_ventas = ventas_qs.count()
+        resumen_ventas = ventas_qs.aggregate(
+            total=Coalesce(Sum('total'), Decimal('0')), cantidad=Count('id')
+        )
+        total_ventas_periodo = float(resumen_ventas['total'] or 0)
+        cantidad_ventas = resumen_ventas['cantidad']
         promedio_ticket = total_ventas_periodo / cantidad_ventas if cantidad_ventas > 0 else 0
 
         # Fetch all VentaItems for the filtered ventas
@@ -431,14 +437,11 @@ class DashboardView(APIView):
         if fecha_hasta:
             pedidos_qs = pedidos_qs.filter(fecha_creacion__lte=fecha_hasta)
 
-        pedidos_estado = {
-            'borrador': pedidos_qs.filter(estado='borrador').count(),
-            'pendiente': pedidos_qs.filter(estado='pendiente').count(),
-            'aprobado': pedidos_qs.filter(estado='aprobado').count(),
-            'rechazado': pedidos_qs.filter(estado='rechazado').count(),
-            'recibido': pedidos_qs.filter(estado='recibido').count(),
-        }
-        total_pedidos_recibidos = pedidos_qs.filter(estado='recibido').count()
+        pedidos_estado = {'borrador': 0, 'pendiente': 0, 'aprobado': 0, 'rechazado': 0, 'recibido': 0}
+        for fila in pedidos_qs.values('estado').annotate(cantidad=Count('id')).order_by():
+            if fila['estado'] in pedidos_estado:
+                pedidos_estado[fila['estado']] = fila['cantidad']
+        total_pedidos_recibidos = pedidos_estado['recibido']
 
         # --- FABRICACIONES ---
         fabricaciones_qs = Fabricacion.objects.all()
@@ -449,27 +452,24 @@ class DashboardView(APIView):
         if fecha_hasta:
             fabricaciones_qs = fabricaciones_qs.filter(creado_en__lte=fecha_hasta)
 
-        fabricaciones_periodo = fabricaciones_qs.count()
-        total_producido = sum(f.cantidad_producida for f in fabricaciones_qs)
+        resumen_fabricaciones = fabricaciones_qs.aggregate(
+            cantidad=Count('id'), producido=Sum('cantidad_producida')
+        )
+        fabricaciones_periodo = resumen_fabricaciones['cantidad']
+        total_producido = resumen_fabricaciones['producido'] or 0
 
         # Comparativa sucursales (stock value vs ventas)
+        ventas_por_sucursal = {
+            fila['sucursal_id']: fila['total']
+            for fila in ventas_qs.values('sucursal_id').annotate(total=Sum('total')).order_by()
+        }
         comparativa_sucursales = []
         for ub in ubicaciones:
-            ub_stock_qs = stock_qs.filter(sub_ubicacion__ubicacion=ub)
-            stock_value = sum(
-                float(s.cantidad) * float(s.producto.precio_venta)
-                for s in ub_stock_qs
-            )
-            ub_ventas = float(
-                ventas_qs.filter(sucursal=ub).aggregate(
-                    total=Coalesce(Sum('total'), Decimal('0'))
-                )['total'] or 0
-            )
             comparativa_sucursales.append({
                 'sucursal': ub.nombre,
                 'sucursal_id': ub.id,
-                'stock_value': round(stock_value, 2),
-                'ventas': round(ub_ventas, 2)
+                'stock_value': round(valor_de(stocks_por_ubicacion.get(ub.id, [])), 2),
+                'ventas': round(float(ventas_por_sucursal.get(ub.id) or 0), 2)
             })
 
         return Response({

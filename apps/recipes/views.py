@@ -142,7 +142,7 @@ class RecetaViewSet(viewsets.ModelViewSet):
                         fecha_ingreso=date.today(),
                     )
                 else:
-                    stock_final, _ = Stock.objects.get_or_create(
+                    stock_final, _ = Stock.objects.select_for_update().get_or_create(
                         producto=receta.producto_final,
                         sub_ubicacion=sub_destino,
                         lote=None,
