@@ -21,27 +21,29 @@ PAUSA = 1  # segundos entre intentos
 MENSAJE = 'El sistema se está iniciando. Esperá unos segundos y volvé a intentar.'
 
 
+def esperar_base(espera_maxima=ESPERA_MAXIMA):
+    """Intenta conectar hasta que la base responda. Devuelve False si se acaba el tiempo."""
+    limite = time.monotonic() + espera_maxima
+    while True:
+        try:
+            connection.ensure_connection()
+            return True
+        except OperationalError as error:
+            codigo = error.args[0] if error.args else None
+            if codigo not in ERRORES_DE_CONEXION:
+                raise
+            if time.monotonic() + PAUSA >= limite:
+                logger.error('La base de datos no respondió a tiempo: %s', error)
+                return False
+            time.sleep(PAUSA)
+
+
 class EsperarBaseDeDatosMiddleware:
     def __init__(self, get_response):
         self.get_response = get_response
 
     def __call__(self, request):
         if request.method != 'OPTIONS' and request.path.startswith(('/api/', '/admin/')):
-            if not self._conectar():
+            if not esperar_base():
                 return JsonResponse({'detail': MENSAJE}, status=503, headers={'Retry-After': '5'})
         return self.get_response(request)
-
-    def _conectar(self):
-        limite = time.monotonic() + ESPERA_MAXIMA
-        while True:
-            try:
-                connection.ensure_connection()
-                return True
-            except OperationalError as error:
-                codigo = error.args[0] if error.args else None
-                if codigo not in ERRORES_DE_CONEXION:
-                    raise
-                if time.monotonic() + PAUSA >= limite:
-                    logger.error('La base de datos no respondió a tiempo: %s', error)
-                    return False
-                time.sleep(PAUSA)
